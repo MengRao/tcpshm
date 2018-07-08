@@ -1,102 +1,97 @@
+#include "tcpshm_server.h"
 #include <bits/stdc++.h>
-#include <strings.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-
 #include "rdtsc.h"
-#include "tcpshm_conn.h"
+
+using namespace std;
+
+struct ServerConf
+{
+    static const int64_t Second = 2000000000LL;
+
+    static const int NameSize = 16;
+    static const int MaxNewConnections = 5;
+    static const int MaxShmConnsPerGrp = 4;
+    static const int MaxShmGrps = 2;
+    static const int MaxTcpConnsPerGrp = 4;
+    static const int MaxTcpGrps = 1;
+    static const int ShmQueueSize = 2048; // must be power of 2
+    static const int TcpQueueSize = 2048; // must be multiple of 8
+    static const int TcpRecvBufSize = 4096; // mulst be multiple of 8
+
+    static const int64_t NewConnectionTimeout = 2 * Second;
+    static const int64_t ConnectionTimeout = 10 * Second;
+    static const int64_t HeartBeatInverval = 3 * Second;
+
+    using LoginUserData = char;
+    using LoginRspUserData = char;
+};
+
+class MyServer;
+using TSServer = TcpShmServer<MyServer, ServerConf>;
+
+class MyServer
+{
+public:
+    MyServer(const std::string& ptcp_dir, const std::string& name)
+        : srv(ptcp_dir, name, this) {
+    }
+
+    void Run(const char* listen_ipv4, uint16_t listen_port) {
+        if(!srv.Start(listen_ipv4, listen_port)) return;
+        vector<thread> threads;
+        for(int i = 0; i < ServerConf::MaxTcpGrps; i++) {
+            threads.emplace_back([this, i]() {
+                while(true) {
+                    srv.PollTcp(rdtsc(), i);
+                }
+            });
+        }
+
+        for(int i = 0; i < ServerConf::MaxShmGrps; i++) {
+            threads.emplace_back([this, i]() {
+                while(true) {
+                    srv.PollShm(i);
+                }
+            });
+        }
+
+        while(true) {
+            srv.PollCtl(rdtsc());
+        }
+    }
+
+private:
+    friend TSServer;
+    void OnSystemError(const char* errno_msg, int sys_errno) {
+        cout << "Server Err: " << errno_msg << " syserrno: " << strerror(sys_errno) << endl;
+    }
+
+    // if accept, set user_data in login_rsp, and return grpid with respect to tcp or shm
+    // else set error_msg in login_rsp if possible, and return -1
+    int
+    OnNewConnection(const struct sockaddr_in* addr, const TSServer::LoginMsg* login, TSServer::LoginRspMsg* login_rsp) {
+        return 0;
+    }
+
+
+    void OnClientLogon(struct sockaddr_in* addr, TSServer::Connection* conn) {
+    }
+
+    void OnClientDisconnected(TSServer::Connection* conn) {
+        cout << "client disconnected" << conn->GetRemoteName() << endl;
+    }
+
+    bool OnClientMsg(TSServer::Connection* conn, MsgHeader* head) {
+        return true;
+    }
+
+    TSServer srv;
+};
 
 int main() {
-    int listenfd, newfd;
-    struct sockaddr_in local_addr, remote_addr;
-    int addr_len;
 
-    if((listenfd = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
-        perror("socket");
-        exit(1);
-    }
-
-    fcntl(listenfd, F_SETFL, O_NONBLOCK);
-    int yes = 1;
-    if(setsockopt(listenfd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes)) == -1) {
-        perror("setsockopt");
-        exit(1);
-    }
-
-    local_addr.sin_family = AF_INET;
-    local_addr.port = htons(12345);
-    local_addr.sin_addr.s_addr = INADDR_ANY;
-    bzero(&(local_addr.sin_zero), 8);
-    if(bind(listenfd, (struct sockaddr*)&servaddr, sizeof(struct sockaddr)) == -1) {
-        perror("bind");
-        exit(1);
-    }
-    if(listen(listenfd, 5) == -1) {
-        perror("listen");
-        exit(1);
-    }
-
-    std::vector<TCPSHMConnection> conns;
-    conns.reserve(10);
-    char buf[1024];
-    static const int kTmpSocks = 10;
-    static const int64_t kTimeOut = 12345678901LL;
-    static const int kLoginMsgSize = sizeof(MsgHeader) + sizeof(LoginMsg);
-    std::pair<int64_t, int> new_socks[kTmpSocks];
-    for(int i = 0; i < kTmpSocks; i++) new_socks[i].second = -1;
-
-    while(true) {
-        int64_t now = rdtsc();
-        newfd = accept(listenfd, (struct sockaddr*)&remote_addr, &addr_len);
-        if(newfd == -1) {
-            if(errno != EAGAIN) {
-                perror("accept");
-            }
-        }
-        else {
-            printf("new connection from %s\n", inet_ntoa(remote_addr.sin_addr));
-            fcntl(newfd, F_SETFL, O_NONBLOCK);
-            int i = 0;
-            for(; i < kTmpSocks; i++) {
-                if(new_socks[i].second < 0) break;
-                if(now - new_sock[i].first > kTimeOut) {
-                    close(new_socks[i].second);
-                    break;
-                }
-            }
-            if(i == kTmpSocks) {
-                fprintf(stderr, "too many tmp connections");
-                close(newfd);
-            }
-            else {
-                new_sock[i] = {now, newfd};
-            }
-        }
-        // handle new socks
-        for(int i = 0; i < kTmpSocks; i++) {
-            if(new_sock[i].second >= 0) {
-                bool do_close = false;
-                int ret = ::recv(new_socks[i].second, buf, kLoginMsgSize, 0);
-                if(ret == kLoginMsgSize) {
-                }
-                else if(ret < 0 && errno == EAGAIN) {
-                    if(now - new_sock[i].first > kTimeOut) {
-                        do_close = true;
-                    }
-                }
-                else {
-                    do_close = true;
-                }
-
-
-                if(do_close) {
-                    close(new_socks[i].second);
-                    new_socks[i].second = -1;
-                }
-            }
-        }
-    }
+    MyServer server("server", "server");
+    server.Run("127.0.0.1", 12345);
 
     return 0;
 }

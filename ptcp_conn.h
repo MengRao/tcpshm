@@ -1,44 +1,80 @@
 #pragma once
 #include "ptcp_queue.h"
+#include "mmap.h"
+#include "string.h"
 
-// single thread class
+// HeartbeatMsg is special that it only has MsgHeader
+struct HeartbeatMsg
+{
+    static const int msg_type = 0;
+};
+
+template<class Conf>
+struct LoginMsgTpl
+{
+    static const int msg_type = 1;
+    char client_name[Conf::NameSize];
+    char last_server_name[Conf::NameSize];
+    char use_shm;
+    typename Conf::LoginUserData user_data;
+};
+
+template<class Conf>
+struct LoginRspMsgTpl
+{
+    static const int msg_type = 2;
+    char server_name[Conf::NameSize];
+    char error_msg[32]; // empty error_msg means success
+    typename Conf::LoginRspUserData user_data;
+};
+
+// Single thread class except RequestClose()
+template<class Conf>
 class PTCPConnection
 {
 public:
-    PTCPConnection(const std::string& ptcp_dir, const std::string& local_name, const std::string& remote_name)
-        : ptcp_dir_(ptcp_dir)
-        , local_name_(local_name)
-        , remote_name_(remote_name) {
+    PTCPConnection() {
     }
 
-    bool reset(int sock_fd, bool use_shm, int remote_ack_seq, int64_t now, int* local_ack_seq) {
-        Close();
-        if(use_shm) {
-            if(pq_) {
-                my_munmap<PTCPQ>(pq_);
-                pq_ = nullptr;
-            }
+    bool Reset(const char* ptcp_send_file,
+               const char* ptcp_ack_seq_file,
+               bool use_shm,
+               uint32_t* local_ack_seq,
+               const char** error_msg) {
+        if(!use_shm && !pq_) {
+            pq_ = my_mmap<PTCPQ>(ptcp_send_file, false, error_msg);
+            if(!pq_) return false;
         }
-        else {
-            if(!pq_) {
-                std::string ptcp_send_file = ptcp_dir + "/" + local_name_ + "_" + remote_name_ + ".ptcp";
-                pq_ = my_mmap<PTCPQ>(ptcp_send_file, false);
-                if(!pq_) return false;
-            }
-        }
-        // we could just use "hbmsg_ = new MsgHeader" for shm, but for dealloc consistency we do the same
         if(!hbmsg_) {
-            std::string hb_msg_file = ptcp_dir + "/" + local_name + "_" + remote_name_ + ".seq";
-            hbmsg_ = my_mmap<MsgHeader>(hb_msg_file, false);
+            hbmsg_ = my_mmap<MsgHeader>(ptcp_ack_seq_file, false, error_msg);
             if(!hbmsg_) return false;
+            hbmsg_->size = sizeof(MsgHeader);
+            hbmsg_->msg_type = HeartbeatMsg::msg_type;
         }
+        *local_ack_seq = hbmsg_->seq_num;
+        return true;
+    }
+
+    void Release() {
+        Close("Release", 0);
+        if(pq_) {
+            my_munmap<PTCPQ>(pq_);
+            pq_ = nullptr;
+        }
+        if(hbmsg_) {
+            my_munmap<MsgHeader>(hbmsg_);
+            hbmsg_ = nullptr;
+        }
+    }
+
+    void Open(int sock_fd, uint32_t remote_ack_seq, int64_t now) {
+        Close("Reconnect", 0);
         if(pq_) {
             pq_->Ack(remote_ack_seq);
         }
         sockfd_ = sock_fd;
+        req_close_ = false;
         active_time_ = last_hb_time_ = now;
-        *local_ack_seq = hbmsg_->seq_num;
-        return true;
     }
 
     MsgHeader* Alloc(uint16_t size) {
@@ -47,13 +83,16 @@ public:
 
     void Push() {
         pq_->Push();
-        if(!closed_) {
-            SendPending();
-        }
+        SendPending();
     }
 
     // safe if IsClosed
     MsgHeader* Front(int64_t now) {
+        if(req_close_) {
+            req_close_ = false;
+            Close("Request close", 0);
+            return nullptr;
+        }
         while(true) {
             int remain_size = writeidx_ - readidx_;
             if(remain_size >= 8) { // we've read the next header
@@ -71,21 +110,21 @@ public:
                     }
                     // handle app msgs...
                     if(UseShm()) { // we dont expect app msgs in tcp channel in shm mode
-                        Close();
+                        Close("Got Tcp app msg in shm mode", 0);
                         return nullptr;
                     }
-                    if(header->seq_num < hb_msg_->seq_num) { // duplicate msg, ignore...
+                    if(header->seq_num < hbmsg_->seq_num) { // duplicate msg, ignore...
                         readidx_ += msg_size;
                         continue;
                     }
                     // we have to Pop() this msg before calling the next Front()
                     return header;
                 }
-                if(msg_size > kBufSize) { // msg too large that we can't handle
-                    Close();
+                if(msg_size > Conf::TcpRecvBufSize) {
+                    Close("Msg size larger than recv buf", 0);
                     return nullptr;
                 }
-                if(write_size + msg_size > kBufSize) {
+                if(writeidx_ + msg_size > Conf::TcpRecvBufSize) {
                     memmove(recvbuf_, recvbuf_ + readidx_, remain_size);
                     writeidx_ = remain_size;
                     readidx_ = 0;
@@ -97,18 +136,21 @@ public:
             // for 0 < remain_size < 8, there must be enough buf space to read the entire header
             // because all msgs and recvbuf_ itself are 8 types aligned
 
-            int ret = ::recv(sockfd_, recvbuf_ + writeidx_, kBufSize - writeidx_, 0);
+            int ret = ::recv(sockfd_, recvbuf_ + writeidx_, Conf::TcpRecvBufSize - writeidx_, 0);
             if(ret <= 0) {
                 if(ret < 0) {
                     if(errno == EAGAIN) {
                         if(now - active_time_ > kTimeOutInterval) {
-                            Close();
+                            Close("Timeout", 0);
                         }
                         return nullptr;
                     }
                 }
                 // ret == 0 or ret < 0 for other errno
-                Close();
+                if(ret == 0)
+                    Close("Remote close", 0);
+                else
+                    Close("Recv error", errno);
                 return nullptr;
             }
             writeidx_ += ret;
@@ -126,11 +168,11 @@ public:
     void SendHB(int64_t now) {
         if((UseShm() || SendPending()) && now - last_hb_time_ >= kHeartBeatInterval) {
             int sent = ::send(sockfd_, hbmsg_, sizeof(MsgHeader), 0);
-            if(send < 0 && errno == EAGAIN) {
+            if(sent < 0 && errno == EAGAIN) {
                 return;
             }
-            if(send != sizeof(MsgHeader)) { // for simplicity, we see partial sendout as error
-                Close();
+            if(sent != sizeof(MsgHeader)) { // for simplicity, we see partial sendout as error
+                Close("Send error", sent < 0 ? errno : 0);
                 return;
             }
             last_hb_time_ = now; // successfully sent
@@ -146,9 +188,9 @@ public:
         uint32_t size = blk_sz << 3;
         while(size > 0) {
             int sent = ::send(sockfd_, p, size, 0);
-            if(send < 0) {
+            if(sent < 0) {
                 if(errno != EAGAIN || (size & 7)) {
-                    Close();
+                    Close("Send error", errno);
                     return false;
                 }
                 else
@@ -158,7 +200,7 @@ public:
             size -= sent;
         }
         int sent_blk = blk_sz - (size >> 3);
-        pq_->Sentout(sent_blk);
+        pq_->Sendout(sent_blk);
         return size == 0;
     }
 
@@ -166,16 +208,25 @@ public:
         return sockfd_ < 0;
     }
 
-    void Close() {
-        if(sockfd_ >= 0) {
-            ::close(sockfd_);
-            sockfd_ = -1;
-            if(pq_) {
-                pq_->Disconnect();
-            }
-            // don't reset readidx_ and writeidx_ for further Front() and Push()
-            // writeidx_ = readidx_ = 0;
+    const char* getCloseReason(int& sys_errno) {
+        sys_errno = close_errno_;
+        return close_reason_;
+    }
+
+    void RequestClose() {
+        req_close_ = true;
+    }
+
+    void Close(const char* reason, int sys_errno) {
+        if(sockfd_ < 0) return;
+        ::close(sockfd_);
+        sockfd_ = -1;
+        if(pq_) {
+            pq_->Disconnect();
         }
+        writeidx_ = readidx_ = 0;
+        close_reason_ = reason;
+        close_errno_ = sys_errno;
     }
 
     bool UseShm() {
@@ -183,16 +234,16 @@ public:
     }
 
 private:
-    static const int kBufSize = 8 * 1024;
     static const int kTimeOutInterval = 12345678;
     static const int kHeartBeatInterval = 1234567;
-    std::string ptcp_dir_;
-    std::string local_name_;
-    std::string remote_name_;
-    typedef PTCPQueue<1024> PTCPQ;
+    typedef PTCPQueue<Conf::TcpQueueSize> PTCPQ;
     PTCPQ* pq_ = nullptr; // may be mmaped to file, or nullptr
     int sockfd_ = -1;
-    char recvbuf_[kBufSize] __attribute__((aligned(8));
+    bool req_close_ = false;
+    const char* close_reason_ = "nil";
+    int close_errno_ = 0;
+    static_assert((Conf::TcpRecvBufSize & 7) == 0, "Conf::TcpRecvBufSize must be multiple of 8");
+    alignas(8) char recvbuf_[Conf::TcpRecvBufSize];
     int writeidx_ = 0;
     int readidx_ = 0;;
     int64_t active_time_ = 0;
