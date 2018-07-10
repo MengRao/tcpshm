@@ -126,9 +126,11 @@ private:
         send_header->msg_type = recv_header->msg_type;
         memcpy(send_header + 1, recv_header + 1, size);
         conn->Push();
+        /*
         static int exp_v = 0;
         int v = *(int*)(recv_header + 1);
-        cout << "v: " << v << endl;
+        */
+        // cout << "v: " << v << endl;
         /*
         if(v != conn->user_data.v) {
             cout << "bad, exp_v: " << conn->user_data.v << " v: " << v << endl;

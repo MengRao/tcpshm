@@ -44,6 +44,8 @@ public:
         if(!use_shm && !q_) {
             q_ = my_mmap<PTCPQ>(ptcp_queue_file, false, error_msg);
             if(!q_) return false;
+            q_->Disconnect();
+            q_->Print();
         }
         if(q_)
             *local_ack_seq = q_->MyAck();
@@ -148,10 +150,9 @@ public:
 
     // we have consumed the msg we got from Front()
     void Pop() {
+        q_->MyAck()++;
         MsgHeader* header = (MsgHeader*)(recvbuf_ + readidx_);
         readidx_ += (header->size + 7) & -8;
-        q_->MyAck()++;
-        // std::cout << "Pop" << std::endl;
         /*
         std::cout << "Pop, readidx_: " << readidx_ << " nextmsg_idx_: " << nextmsg_idx_ << " writeidx_: " << writeidx_
                   << std::endl;
@@ -182,6 +183,8 @@ public:
         if(blk_sz == 0) return true;
         uint32_t size = blk_sz << 3;
         while(size > 0) {
+            int v = *(int*)(p + 8);
+            // std::cout << "sending v: " << v << " size: " << size << std::endl;
             int sent = ::send(sockfd_, p, size, MSG_NOSIGNAL);
             if(sent < 0) {
                 if(errno != EAGAIN || (size & 7)) {

@@ -48,6 +48,10 @@ public:
 
     void Sendout(int blk_sz) {
         send_idx_ += blk_sz;
+        /*
+        std::cout << "Sendout read_idx_: " << read_idx_ << " send_idx_: " << send_idx_ << " write_idx_: " << write_idx_
+                  << std::endl;
+                  */
     }
 
     void Disconnect() {
@@ -56,6 +60,10 @@ public:
 
     // the next seq_num peer side expect
     void Ack(uint32_t ack_seq) {
+        /*
+        std::cout << "Ack ack_seq: " << ack_seq << " read_seq_num_: " << read_seq_num_ << " read_idx_: " << read_idx_
+                  << " send_idx_: " << send_idx_ << " write_idx_: " << write_idx_ << std::endl;
+                  */
         while(read_idx_ < write_idx_) {
             if(read_seq_num_ >= ack_seq) break;
             read_idx_ += (blk_[read_idx_].size + sizeof(MsgHeader) - 1) / sizeof(MsgHeader);
@@ -67,14 +75,15 @@ public:
         else if(send_idx_ < read_idx_) { // could happen on reconnect recovery
             send_idx_ = read_idx_;
         }
-        /*
-        std::cout << "Ack ack_seq: " << ack_seq << " read_idx_: " << read_idx_ << " send_idx_: " << send_idx_
-                  << " write_idx_: " << write_idx_ << std::endl;
-                  */
     }
 
     uint32_t& MyAck() {
         return ack_seq_num_;
+    }
+
+    void Print() {
+        std::cout << "Print read_idx_: " << read_idx_ << " send_idx_: " << send_idx_ << " write_idx_: " << write_idx_
+                  << " read_seq_num_: " << read_seq_num_ << " ack_seq_num_: " << ack_seq_num_ << std::endl;
     }
 
 private:
