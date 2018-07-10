@@ -33,7 +33,7 @@ public:
     }
 
     void Push() {
-        uint32_t blk_sz = (blk[write_idx % BLK_CNT].size + sizeof(Block) - 1) / sizeof(Block);
+        uint32_t blk_sz = (blk[write_idx % BLK_CNT].header.size + sizeof(Block) - 1) / sizeof(Block);
         write_idx += blk_sz;
         asm volatile("" : : "m"(write_idx) : ); // force write memory
     }

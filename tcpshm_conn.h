@@ -19,7 +19,6 @@ public:
 
     bool Reset(bool use_shm, uint32_t* local_ack_seq, const char** error_msg) {
         std::string ptcp_send_file = std::string(ptcp_dir_) + "/" + local_name_ + "_" + remote_name_ + ".ptcp";
-        std::string ptcp_ack_seq_file = std::string(ptcp_dir_) + "/" + local_name_ + "_" + remote_name_ + ".seq";
         std::string shm_send_file = std::string("/") + local_name_ + "_" + remote_name_ + ".shm";
         std::string shm_recv_file = std::string("/") + remote_name_ + "_" + local_name_ + ".shm";
 
@@ -33,7 +32,7 @@ public:
                 if(!shm_recvq_) return false;
             }
         }
-        return ptcp_conn_.Reset(ptcp_send_file.c_str(), ptcp_ack_seq_file.c_str(), use_shm, local_ack_seq, error_msg);
+        return ptcp_conn_.Reset(ptcp_send_file.c_str(), use_shm, local_ack_seq, error_msg);
     }
 
     void Release() {
@@ -57,12 +56,24 @@ public:
         return ptcp_conn_.IsClosed();
     }
 
-    const char* getCloseReason(int& sys_errno) {
-        return ptcp_conn_.getCloseReason(sys_errno);
+    void RequestClose() {
+        ptcp_conn_.RequestClose();
+    }
+
+    const char* GetCloseReason(int& sys_errno) {
+        return ptcp_conn_.GetCloseReason(sys_errno);
     }
 
     char* GetRemoteName() {
         return remote_name_;
+    }
+
+    const char* GetLocalName() {
+        return local_name_;
+    }
+
+    const char* GetPtcpDir() {
+        return ptcp_dir_;
     }
 
     MsgHeader* Alloc(uint16_t size) {
@@ -96,6 +107,8 @@ public:
         shm_recvq_->Pop();
     }
 
+public:
+    typename Conf::ConnectionUserData user_data;
 
 private:
     const char* local_name_;

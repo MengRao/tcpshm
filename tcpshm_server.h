@@ -19,7 +19,7 @@ public:
         , handler_(handler) {
         strncpy(server_name_, server_name.c_str(), sizeof(server_name_) - 1);
         server_name_[sizeof(server_name_) - 1] = 0;
-        mkdir(ptcp_dir_, 0755);
+        mkdir(ptcp_dir_.c_str(), 0755);
         for(auto& conn : conn_pool_) {
             conn.init(ptcp_dir.c_str(), server_name_);
         }
@@ -40,7 +40,7 @@ public:
         Stop();
     }
 
-    bool Start(bool use_shm, const char* listen_ipv4, uint16_t listen_port) {
+    bool Start(const char* listen_ipv4, uint16_t listen_port) {
         if(listenfd_ >= 0) {
             handler_->OnSystemError("already started", 0);
             return false;
@@ -122,7 +122,9 @@ public:
                 Connection& conn = *grp.conns[i];
                 conn.TcpFront(now); // poll heartbeats, ignore return
                 if(conn.IsClosed()) {
-                    handler_->OnClientDisconnected(&conn);
+                    int sys_errno;
+                    const char* reason = conn.GetCloseReason(sys_errno);
+                    handler_->OnClientDisconnected(&conn, reason, sys_errno);
                     std::swap(grp.conns[i], grp.conns[--grp.live_cnt]);
                 }
                 else {
@@ -135,7 +137,9 @@ public:
             for(int i = 0; i < grp.live_cnt;) {
                 Connection& conn = *grp.conns[i];
                 if(conn.IsClosed()) {
-                    handler_->OnClientDisconnected(&conn);
+                    int sys_errno;
+                    const char* reason = conn.GetCloseReason(sys_errno);
+                    handler_->OnClientDisconnected(&conn, reason, sys_errno);
                     std::swap(grp.conns[i], grp.conns[--grp.live_cnt]);
                 }
                 else {
@@ -228,7 +232,7 @@ private:
         LoginMsg* login = (LoginMsg*)(conn.recvbuf + 1);
         if(login->client_name[0] == 0) {
             strncpy(login_rsp->error_msg, "Invalid client name", sizeof(login_rsp->error_msg));
-            ::send(conn.fd, sendbuf, sizeof(sendbuf), 0);
+            ::send(conn.fd, sendbuf, sizeof(sendbuf), MSG_NOSIGNAL);
             return;
         }
         login->client_name[sizeof(login->client_name) - 1] = 0;
@@ -237,7 +241,7 @@ private:
             if(login_rsp->error_msg[0] == 0) { // user didn't set error_msg? set a default one
                 strncpy(login_rsp->error_msg, "Login Reject", sizeof(login_rsp->error_msg));
             }
-            ::send(conn.fd, sendbuf, sizeof(sendbuf), 0);
+            ::send(conn.fd, sendbuf, sizeof(sendbuf), MSG_NOSIGNAL);
             return;
         }
         auto& grp = grps[grpid];
@@ -252,37 +256,40 @@ private:
                 continue;
             }
             // match
+            if(i < grp.live_cnt) {
+                strncpy(login_rsp->error_msg, "Already loggned on", sizeof(login_rsp->error_msg));
+                ::send(conn.fd, sendbuf, sizeof(sendbuf), MSG_NOSIGNAL);
+                return;
+            }
             const char* error_msg;
-            if(!curconn.Reset(login->use_shm, &sendbuf[0].seq_num, &error_msg)) {
+            if(!curconn.Reset(login->use_shm, &sendbuf[0].ack_seq, &error_msg)) {
                 // we can not mmap to ptcp or chm files with filenames related to local and remote name
                 // in this case, curconn must not be open, i.e. i >= live_cnt
                 handler_->OnSystemError(error_msg, errno);
                 strncpy(login_rsp->error_msg, "System error", sizeof(login_rsp->error_msg));
-                ::send(conn.fd, sendbuf, sizeof(sendbuf), 0);
+                ::send(conn.fd, sendbuf, sizeof(sendbuf), MSG_NOSIGNAL);
                 return;
             }
 
-            if(::send(conn.fd, sendbuf, sizeof(sendbuf), 0) != sizeof(sendbuf)) {
+            if(::send(conn.fd, sendbuf, sizeof(sendbuf), MSG_NOSIGNAL) != sizeof(sendbuf)) {
                 // curconn status is not changed(it could still be alive!)
                 return;
             }
-            int remote_ack_seq = conn.recvbuf[0].seq_num;
-            // if server_name has changed, reset the ack_seq_num
+            int remote_ack_seq = conn.recvbuf[0].ack_seq;
+            // if server_name has changed, reset the ack_seq
             if(strncmp(login->last_server_name, server_name_, sizeof(server_name_)) != 0) {
                 remote_ack_seq = 0;
             }
             curconn.Open(conn.fd, remote_ack_seq, now);
             conn.fd = -1; // so it won't be closed by caller
-            if(i >= grp.live_cnt) {
-                // switch to live
-                std::swap(grp.conns[i], grp.conns[grp.live_cnt++]);
-            }
+            // switch to live
+            std::swap(grp.conns[i], grp.conns[grp.live_cnt++]);
             handler_->OnClientLogon(&conn.addr, &curconn);
             return;
         }
         // no space for new remote name
         strncpy(login_rsp->error_msg, "Max client cnt exceeded", sizeof(login_rsp->error_msg));
-        ::send(conn.fd, sendbuf, sizeof(sendbuf), 0);
+        ::send(conn.fd, sendbuf, sizeof(sendbuf), MSG_NOSIGNAL);
     }
 
 private:

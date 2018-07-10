@@ -1,0 +1,25 @@
+#pragma once
+
+// confurations that must be the same between server and client
+struct CommonConf
+{
+    static const int NameSize = 16;
+
+    static const int ShmQueueSize = 2048; // must be power of 2
+
+    using LoginUserData = char;
+    using LoginRspUserData = char;
+};
+
+template<uint32_t N, uint16_t MsgType>
+struct MsgTpl
+{
+    static const uint16_t msg_type = MsgType;
+    int val[N];
+};
+
+typedef MsgTpl<1, 1> Msg1;
+typedef MsgTpl<1, 2> Msg2;
+typedef MsgTpl<1, 3> Msg3;
+typedef MsgTpl<1, 4> Msg4;
+

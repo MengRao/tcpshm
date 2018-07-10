@@ -1,11 +1,13 @@
 #pragma once
 #include "msg_header.h"
+#include <bits/stdc++.h>
 
 // Simple single thread persist Queue that can be mmap-ed to a file
 template<uint32_t Bytes>
 class PTCPQueue
 {
 public:
+    static_assert(Bytes % sizeof(MsgHeader) == 0, "Bytes must be multiple of 8");
     static const uint32_t BLK_CNT = Bytes / sizeof(MsgHeader);
 
     MsgHeader* Alloc(uint16_t size) {
@@ -21,15 +23,22 @@ public:
         }
         MsgHeader& header = blk_[write_idx_];
         header.size = size;
-        // header.msg_type = T::msg_type;
+        /*
+        std::cout << "Alloc read_idx_: " << read_idx_ << " send_idx_: " << send_idx_ << " write_idx_: " << write_idx_
+                  << std::endl;
+                  */
         return &header;
     }
 
     void Push() {
         MsgHeader& header = blk_[write_idx_];
         uint32_t blk_sz = (header.size + sizeof(MsgHeader) - 1) / sizeof(MsgHeader);
-        header.seq_num = seq_num_++; // seq_num starts from 0
+        header.ack_seq = ack_seq_num_;
         write_idx_ += blk_sz;
+        /*
+        std::cout << "Push read_idx_: " << read_idx_ << " send_idx_: " << send_idx_ << " write_idx_: " << write_idx_
+                  << std::endl;
+                  */
     }
 
     MsgHeader* GetSendable(int* blk_sz) {
@@ -46,10 +55,11 @@ public:
     }
 
     // the next seq_num peer side expect
-    void Ack(int ack_seq) {
+    void Ack(uint32_t ack_seq) {
         while(read_idx_ < write_idx_) {
-            if(blk_[read_idx_].seq_num >= ack_seq) break;
+            if(read_seq_num_ >= ack_seq) break;
             read_idx_ += (blk_[read_idx_].size + sizeof(MsgHeader) - 1) / sizeof(MsgHeader);
+            read_seq_num_++;
         }
         if(read_idx_ == write_idx_) {
             read_idx_ = write_idx_ = send_idx_ = 0;
@@ -57,6 +67,14 @@ public:
         else if(send_idx_ < read_idx_) { // could happen on reconnect recovery
             send_idx_ = read_idx_;
         }
+        /*
+        std::cout << "Ack ack_seq: " << ack_seq << " read_idx_: " << read_idx_ << " send_idx_: " << send_idx_
+                  << " write_idx_: " << write_idx_ << std::endl;
+                  */
+    }
+
+    uint32_t& MyAck() {
+        return ack_seq_num_;
     }
 
 private:
@@ -66,6 +84,7 @@ private:
     uint32_t write_idx_;
     uint32_t read_idx_;
     uint32_t send_idx_;
-    uint32_t seq_num_;
+    uint32_t read_seq_num_; // the seq_num_ of msg read_idx_ points to
+    uint32_t ack_seq_num_;
 };
 
