@@ -159,8 +159,8 @@ public:
             // even some conn could be visited twice, but they're all fine
             Connection& conn = *grp.conns[i];
             MsgHeader* head = conn.TcpFront(now);
-            if(head && handler_->OnClientMsg(&conn, head)) {
-                conn.TcpPop();
+            if(head) {
+                handler_->OnClientMsg(&conn, head);
             }
         }
     }
@@ -171,8 +171,8 @@ public:
         for(int i = 0; i < grp.live_cnt; i++) {
             Connection& conn = *grp.conns[i];
             MsgHeader* head = conn.ShmFront();
-            if(head && handler_->OnClientMsg(&conn, head)) {
-                conn.ShmPop();
+            if(head) {
+                handler_->OnClientMsg(&conn, head);
             }
         }
     }

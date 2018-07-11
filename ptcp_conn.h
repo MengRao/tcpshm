@@ -38,6 +38,7 @@ public:
     PTCPConnection() {
         hbmsg_.size = sizeof(MsgHeader);
         hbmsg_.msg_type = HeartbeatMsg::msg_type;
+        hbmsg_.ack_seq = 0;
     }
 
     bool Reset(const char* ptcp_queue_file, bool use_shm, uint32_t* local_ack_seq, const char** error_msg) {
@@ -64,12 +65,13 @@ public:
 
     void Open(int sock_fd, uint32_t remote_ack_seq, int64_t now) {
         Close("Reconnect", 0);
-        if(q_) {
-            q_->Ack(remote_ack_seq);
-        }
         sockfd_ = sock_fd;
         writeidx_ = readidx_ = nextmsg_idx_ = 0;
-        active_time_ = last_hb_time_ = now;
+        recv_time_ = send_time_ = now_ = now;
+        if(q_) {
+            q_->Ack(remote_ack_seq);
+            SendPending();
+        }
     }
 
     MsgHeader* Alloc(uint16_t size) {
@@ -78,14 +80,13 @@ public:
 
     void Push() {
         q_->Push();
-        // std::cout << "Push" << std::endl;
         SendPending();
     }
 
     // safe if IsClosed
-    MsgHeader* Front(int64_t now) {
+    MsgHeader* Front() {
         if(UseShm()) { // for shm, we only expect HB in tcp channel so just read something and ignore
-            DoRecv(now, sizeof(MsgHeader));
+            DoRecv(sizeof(MsgHeader));
             return nullptr;
         }
         while(nextmsg_idx_ != readidx_) {
@@ -94,10 +95,6 @@ public:
                 readidx_ += sizeof(MsgHeader);
                 continue;
             }
-            /*
-            std::cout << "Front 1, readidx_: " << readidx_ << " nextmsg_idx_: " << nextmsg_idx_
-                      << " writeidx_: " << writeidx_ << std::endl;
-                      */
             if(last_my_ack_ == q_->MyAck()) break;
             last_my_ack_ = q_->MyAck();
             return header;
@@ -122,7 +119,7 @@ public:
             readidx_ = 0;
         }
 
-        writeidx_ += DoRecv(now, Conf::TcpRecvBufSize - writeidx_);
+        writeidx_ += DoRecv(Conf::TcpRecvBufSize - writeidx_);
         while(writeidx_ - nextmsg_idx_ >= 8) {
             MsgHeader* header = (MsgHeader*)(recvbuf_ + nextmsg_idx_);
             q_->Ack(header->ack_seq);
@@ -139,10 +136,6 @@ public:
             nextmsg_idx_ += msg_size;
         }
         if(readidx_ != nextmsg_idx_) {
-            /*
-            std::cout << "Front 2, readidx_: " << readidx_ << " nextmsg_idx_: " << nextmsg_idx_
-                      << " writeidx_: " << writeidx_ << std::endl;
-                      */
             return (MsgHeader*)(recvbuf_ + readidx_);
         }
         return nullptr;
@@ -153,38 +146,41 @@ public:
         q_->MyAck()++;
         MsgHeader* header = (MsgHeader*)(recvbuf_ + readidx_);
         readidx_ += (header->size + 7) & -8;
-        /*
-        std::cout << "Pop, readidx_: " << readidx_ << " nextmsg_idx_: " << nextmsg_idx_ << " writeidx_: " << writeidx_
-                  << std::endl;
-                  */
+    }
+
+    void PushAndPop() {
+        q_->Push();
+        Pop();
+        SendPending();
     }
 
     // safe if IsClosed
     void SendHB(int64_t now) {
-        if((UseShm() || SendPending()) && now - last_hb_time_ >= Conf::HeartBeatInverval) {
+        now_ = now;
+        if(now_ - send_time_ < Conf::HeartBeatInverval) return;
+        if(q_) {
+            if(SendPending()) return;
             hbmsg_.ack_seq = q_->MyAck();
-            int sent = ::send(sockfd_, &hbmsg_, sizeof(hbmsg_), MSG_NOSIGNAL);
-            if(sent < 0 && errno == EAGAIN) {
-                return;
-            }
-            if(sent != sizeof(MsgHeader)) { // for simplicity, we see partial sendout as error
-                Close("Send error", sent < 0 ? errno : 0);
-                return;
-            }
-            last_hb_time_ = now; // successfully sent
         }
+        int sent = ::send(sockfd_, &hbmsg_, sizeof(hbmsg_), MSG_NOSIGNAL);
+        if(sent < 0 && errno == EAGAIN) {
+            return;
+        }
+        if(sent != sizeof(MsgHeader)) { // for simplicity, we see partial sendout as error
+            Close("Send error", sent < 0 ? errno : 0);
+            return;
+        }
+        send_time_ = now_; // successfully sent
     }
 
-    // return true if all pending data is sent out
-    // safe if IsClosed
+    // return false only if no pending data to send
     bool SendPending() {
+        if(IsClosed()) return false;
         int blk_sz;
-        const char* p = (char*)q_->GetSendable(&blk_sz);
-        if(blk_sz == 0) return true;
+        const char* p = (char*)q_->GetSendable(blk_sz);
+        if(blk_sz == 0) return false;
         uint32_t size = blk_sz << 3;
         while(size > 0) {
-            int v = *(int*)(p + 8);
-            // std::cout << "sending v: " << v << " size: " << size << std::endl;
             int sent = ::send(sockfd_, p, size, MSG_NOSIGNAL);
             if(sent < 0) {
                 if(errno != EAGAIN || (size & 7)) {
@@ -199,8 +195,11 @@ public:
             size -= sent;
         }
         int sent_blk = blk_sz - (size >> 3);
-        q_->Sendout(sent_blk);
-        return size == 0;
+        if(sent_blk > 0) {
+            send_time_ = now_;
+            q_->Sendout(sent_blk);
+        }
+        return true;
     }
 
     bool IsClosed() {
@@ -218,7 +217,7 @@ public:
 
     void Close(const char* reason, int sys_errno) {
         if(sockfd_ < 0) return;
-        std::cout << "Close: " << reason << std::endl;
+        // std::cout << "Close: " << reason << std::endl;
         ::close(sockfd_);
         sockfd_ = -1;
         if(q_) {
@@ -234,12 +233,12 @@ public:
     }
 
 private:
-    int DoRecv(int64_t now, int len) {
+    int DoRecv(int len) {
         int ret = ::recv(sockfd_, recvbuf_ + writeidx_, len, 0);
         if(ret <= 0) {
             if(ret < 0) {
                 if(errno == EAGAIN) {
-                    if(now - active_time_ > Conf::ConnectionTimeout) {
+                    if(now_ - recv_time_ > Conf::ConnectionTimeout) {
                         Close("Timeout", 0);
                     }
                     return 0;
@@ -252,7 +251,7 @@ private:
                 Close("Recv error", errno);
             return 0;
         }
-        active_time_ = now;
+        recv_time_ = now_;
         return ret;
     }
 
@@ -267,8 +266,9 @@ private:
     int writeidx_ = 0;
     int nextmsg_idx_ = 0;
     int readidx_ = 0;
-    int64_t active_time_ = 0;
-    int64_t last_hb_time_ = 0;
+    int64_t recv_time_ = 0;
+    int64_t send_time_ = 0;
+    int64_t now_ = 0;
     MsgHeader hbmsg_;
 
     uint32_t last_my_ack_ = 0;

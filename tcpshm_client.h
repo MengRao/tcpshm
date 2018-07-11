@@ -93,7 +93,7 @@ public:
 
         handler_->FillLoginUserData(&login->user_data);
 
-        std::cout << "LoginMsg, ack: " << sendbuf[0].ack_seq << std::endl;
+        // std::cout << "LoginMsg, ack: " << sendbuf[0].ack_seq << std::endl;
 
         int ret = send(fd, sendbuf, sizeof(sendbuf), MSG_NOSIGNAL);
         if(ret != sizeof(sendbuf)) {
@@ -136,7 +136,7 @@ public:
         fcntl(fd, F_SETFL, O_NONBLOCK);
         int64_t now = handler_->OnLoginSuccess(login_rsp);
 
-        std::cout << "LoginRspMsg, ack: " << recvbuf[0].ack_seq << std::endl;
+        // std::cout << "LoginRspMsg, ack: " << recvbuf[0].ack_seq << std::endl;
 
         conn_.Open(fd, recvbuf[0].ack_seq, now);
         return true;
@@ -151,15 +151,15 @@ public:
             handler_->OnDisconnected(reason, sys_errno);
             return;
         }
-        if(head && handler_->OnServerMsg(head)) {
-            conn_.TcpPop();
+        if(head) {
+            handler_->OnServerMsg(head);
         }
     }
 
     void PollShm() {
         MsgHeader* head = conn_.ShmFront();
-        if(head && handler_->OnServerMsg(head)) {
-            conn_.ShmPop();
+        if(head) {
+            handler_->OnServerMsg(head);
         }
     }
 

@@ -9,8 +9,8 @@ struct ClientConf : public CommonConf
 {
     static const int64_t Second = 2000000000LL;
 
-    static const int TcpQueueSize = 2048; // must be multiple of 8
-    static const int TcpRecvBufSize = 4096; // must be multiple of 8
+    static const int TcpQueueSize = 40960;   // must be multiple of 8
+    static const int TcpRecvBufSize = 40960; // must be multiple of 8
 
     static const int64_t ConnectionTimeout = 10 * Second;
     static const int64_t HeartBeatInverval = 3 * Second;
@@ -27,6 +27,7 @@ public:
     EchoClient(const std::string& ptcp_dir, const std::string& name)
         : cli(ptcp_dir, name, this)
         , conn(cli.getConnection()) {
+        srand(time(NULL));
     }
 
     void Run(bool use_shm, const char* server_ipv4, uint16_t server_port) {
@@ -55,6 +56,7 @@ public:
                     cli.PollShm();
                 }
             });
+
             while(!conn->IsClosed()) {
                 cli.PollTcp(rdtsc());
             }
@@ -117,11 +119,8 @@ private:
         for(auto v : msg->val) {
             if(v != *recv_num) {
                 cout << "bad: v: " << v << " recv_num: " << (*recv_num) << endl;
-                cout << "good cnt: " << good_cnt << " last_good: " << last_good << endl;
                 exit(1);
             }
-            good_cnt++;
-            last_good = v;
             // cout << "ok v: " << v << endl;
             (*recv_num)++;
         }
@@ -162,8 +161,7 @@ private:
         else {
             assert(false);
         }
-        // cout << "recv, recv_num: " << (*recv_num) << endl;
-        return true;
+        conn->Pop();
     }
 
     void OnDisconnected(const char* reason, int sys_errno) {
@@ -178,9 +176,6 @@ private:
     bool slow = false;
     int* send_num;
     int* recv_num;
-
-    int good_cnt = 0;
-    int last_good = 0;
 };
 
 int main() {

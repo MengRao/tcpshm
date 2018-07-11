@@ -18,8 +18,8 @@ struct MsgTpl
     int val[N];
 };
 
-typedef MsgTpl<1, 1> Msg1;
-typedef MsgTpl<1, 2> Msg2;
-typedef MsgTpl<1, 3> Msg3;
-typedef MsgTpl<1, 4> Msg4;
+typedef MsgTpl<4, 1> Msg1;
+typedef MsgTpl<9, 2> Msg2;
+typedef MsgTpl<17, 3> Msg3;
+typedef MsgTpl<50, 4> Msg4;
 

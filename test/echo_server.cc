@@ -19,8 +19,8 @@ struct ServerConf : public CommonConf
     static const int MaxShmGrps = 2;
     static const int MaxTcpConnsPerGrp = 4;
     static const int MaxTcpGrps = 1;
-    static const int TcpQueueSize = 2048; // must be multiple of 8
-    static const int TcpRecvBufSize = 4096; // mulst be multiple of 8
+    static const int TcpQueueSize = 40960;   // must be multiple of 8
+    static const int TcpRecvBufSize = 40960; // must be multiple of 8
 
     static const int64_t NewConnectionTimeout = 2 * Second;
     static const int64_t ConnectionTimeout = 10 * Second;
@@ -73,6 +73,7 @@ public:
             thr.join();
         }
         srv.Stop();
+        cout << "Server stopped" << endl;
     }
 
 private:
@@ -119,27 +120,13 @@ private:
              << " syserrno: " << strerror(sys_errno) << endl;
     }
 
-    bool OnClientMsg(TSServer::Connection* conn, MsgHeader* recv_header) {
+    void OnClientMsg(TSServer::Connection* conn, MsgHeader* recv_header) {
         auto size = recv_header->size - sizeof(MsgHeader);
         MsgHeader* send_header = conn->Alloc(size);
-        if(!send_header) return false;
+        if(!send_header) return;
         send_header->msg_type = recv_header->msg_type;
         memcpy(send_header + 1, recv_header + 1, size);
-        conn->Push();
-        /*
-        static int exp_v = 0;
-        int v = *(int*)(recv_header + 1);
-        */
-        // cout << "v: " << v << endl;
-        /*
-        if(v != conn->user_data.v) {
-            cout << "bad, exp_v: " << conn->user_data.v << " v: " << v << endl;
-        }
-        else {
-            conn->user_data.v++;
-        }
-        */
-        return true;
+        conn->PushAndPop();
     }
 
     TSServer srv;
@@ -152,7 +139,6 @@ int main() {
 
     EchoServer server("server", "server");
     server.Run("0.0.0.0", 12345);
-    cout << "server quit" << endl;
 
     return 0;
 }

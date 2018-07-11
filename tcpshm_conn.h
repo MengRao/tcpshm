@@ -91,20 +91,31 @@ public:
     }
 
     MsgHeader* TcpFront(int64_t now) {
-        ptcp_conn_.SendHB(now); 
-        return ptcp_conn_.Front(now); // for shm, we need to recv HB and Front() always return nullptr
-    }
-
-    void TcpPop() {
-        ptcp_conn_.Pop();
+        ptcp_conn_.SendHB(now);
+        return ptcp_conn_.Front(); // for shm, we need to recv HB and Front() always return nullptr
     }
 
     MsgHeader* ShmFront() {
         return shm_recvq_->Front();
     }
 
-    void ShmPop() {
-        shm_recvq_->Pop();
+    void Pop() {
+        if(shm_recvq_) {
+            shm_recvq_->Pop();
+        }
+        else {
+            ptcp_conn_.Pop();
+        }
+    }
+
+    void PushAndPop() {
+        if(shm_sendq_) {
+            shm_sendq_->Push();
+            shm_recvq_->Pop();
+        }
+        else {
+            ptcp_conn_.PushAndPop();
+        }
     }
 
 public:

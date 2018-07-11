@@ -41,8 +41,8 @@ public:
                   */
     }
 
-    MsgHeader* GetSendable(int* blk_sz) {
-        *blk_sz = write_idx_ - send_idx_;
+    MsgHeader* GetSendable(int& blk_sz) {
+        blk_sz = write_idx_ - send_idx_;
         return blk_ + send_idx_;
     }
 
