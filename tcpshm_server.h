@@ -6,6 +6,8 @@
 #include <arpa/inet.h>
 #include "tcpshm_conn.h"
 
+namespace tcpshm {
+
 template<class Derived, class Conf>
 class TcpShmServer
 {
@@ -123,8 +125,8 @@ protected:
                 conn.TcpFront(now); // poll heartbeats, ignore return
                 if(conn.IsClosed()) {
                     int sys_errno;
-                    const char* reason = conn.GetCloseReason(sys_errno);
-                    static_cast<Derived*>(this)->OnClientDisconnected(&conn, reason, sys_errno);
+                    const char* reason = conn.GetCloseReason(&sys_errno);
+                    static_cast<Derived*>(this)->OnClientDisconnected(conn, reason, sys_errno);
                     std::swap(grp.conns[i], grp.conns[--grp.live_cnt]);
                 }
                 else {
@@ -138,8 +140,8 @@ protected:
                 Connection& conn = *grp.conns[i];
                 if(conn.IsClosed()) {
                     int sys_errno;
-                    const char* reason = conn.GetCloseReason(sys_errno);
-                    static_cast<Derived*>(this)->OnClientDisconnected(&conn, reason, sys_errno);
+                    const char* reason = conn.GetCloseReason(&sys_errno);
+                    static_cast<Derived*>(this)->OnClientDisconnected(conn, reason, sys_errno);
                     std::swap(grp.conns[i], grp.conns[--grp.live_cnt]);
                 }
                 else {
@@ -160,7 +162,7 @@ protected:
             Connection& conn = *grp.conns[i];
             MsgHeader* head = conn.TcpFront(now);
             if(head) {
-                static_cast<Derived*>(this)->OnClientMsg(&conn, head);
+                static_cast<Derived*>(this)->OnClientMsg(conn, head);
             }
         }
     }
@@ -172,7 +174,7 @@ protected:
             Connection& conn = *grp.conns[i];
             MsgHeader* head = conn.ShmFront();
             if(head) {
-                static_cast<Derived*>(this)->OnClientMsg(&conn, head);
+                static_cast<Derived*>(this)->OnClientMsg(conn, head);
             }
         }
     }
@@ -237,7 +239,7 @@ private:
             return;
         }
         login->client_name[sizeof(login->client_name) - 1] = 0;
-        int grpid = static_cast<Derived*>(this)->OnNewConnection(&conn.addr, login, login_rsp);
+        int grpid = static_cast<Derived*>(this)->OnNewConnection(conn.addr, login, login_rsp);
         if(grpid < 0) {
             if(login_rsp->error_msg[0] == 0) { // user didn't set error_msg? set a default one
                 strncpy(login_rsp->error_msg, "Login Reject", sizeof(login_rsp->error_msg));
@@ -266,7 +268,7 @@ private:
             const char* error_msg;
             if(!curconn.OpenFile(login->use_shm, &error_msg)) {
                 // we can not mmap to ptcp or chm files with filenames related to local and remote name
-                static_cast<Derived*>(this)->OnClientFileError(&curconn, error_msg, errno);
+                static_cast<Derived*>(this)->OnClientFileError(curconn, error_msg, errno);
                 strncpy(login_rsp->error_msg, "System error", sizeof(login_rsp->error_msg));
                 ::send(conn.fd, sendbuf, sizeof(sendbuf), MSG_NOSIGNAL);
                 return;
@@ -284,7 +286,7 @@ private:
             }
             else {
                 if(!curconn.GetSeq(&local_ack_seq, &local_seq_start, &local_seq_end, &error_msg)) {
-                    static_cast<Derived*>(this)->OnClientFileError(&curconn, error_msg, errno);
+                    static_cast<Derived*>(this)->OnClientFileError(curconn, error_msg, errno);
                     strncpy(login_rsp->error_msg, "System error", sizeof(login_rsp->error_msg));
                     ::send(conn.fd, sendbuf, sizeof(sendbuf), MSG_NOSIGNAL);
                     return;
@@ -295,7 +297,7 @@ private:
             login_rsp->server_seq_end = local_seq_end;
             if(!CheckAckInQueue(remote_ack_seq, local_seq_start, local_seq_end) ||
                !CheckAckInQueue(local_ack_seq, remote_seq_start, remote_seq_end)) {
-                static_cast<Derived*>(this)->OnSeqNumberMismatch(&curconn,
+                static_cast<Derived*>(this)->OnSeqNumberMismatch(curconn,
                                                                  local_ack_seq,
                                                                  local_seq_start,
                                                                  local_seq_end,
@@ -316,7 +318,7 @@ private:
             conn.fd = -1; // so it won't be closed by caller
             // switch to live
             std::swap(grp.conns[i], grp.conns[grp.live_cnt++]);
-            static_cast<Derived*>(this)->OnClientLogon(&conn.addr, &curconn);
+            static_cast<Derived*>(this)->OnClientLogon(conn.addr, curconn);
             return;
         }
         // no space for new remote name
@@ -341,3 +343,4 @@ private:
     ConnectionGroup<Conf::MaxShmConnsPerGrp> shm_grps_[Conf::MaxShmGrps];
     ConnectionGroup<Conf::MaxTcpConnsPerGrp> tcp_grps_[Conf::MaxTcpGrps];
 };
+} // namespace tcpshm

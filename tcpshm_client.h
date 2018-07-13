@@ -7,7 +7,7 @@
 #include <arpa/inet.h>
 #include "tcpshm_conn.h"
 
-#include <bits/stdc++.h>
+namespace tcpshm {
 
 template<class Derived, class Conf>
 class TcpShmClient
@@ -95,9 +95,6 @@ protected:
 
         static_cast<Derived*>(this)->FillLoginUserData(&login->user_data);
 
-        std::cout << "LoginMsg, ack: " << sendbuf[0].ack_seq << " client_seq_start: " << login->client_seq_start
-                  << " client_seq_end: " << login->client_seq_end << std::endl;
-
         int ret = send(fd, sendbuf, sizeof(sendbuf), MSG_NOSIGNAL);
         if(ret != sizeof(sendbuf)) {
             static_cast<Derived*>(this)->OnSystemError("send", ret < 0 ? errno : 0);
@@ -150,8 +147,6 @@ protected:
         fcntl(fd, F_SETFL, O_NONBLOCK);
         int64_t now = static_cast<Derived*>(this)->OnLoginSuccess(login_rsp);
 
-        // std::cout << "LoginRspMsg, ack: " << recvbuf[0].ack_seq << std::endl;
-
         conn_.Open(fd, recvbuf[0].ack_seq, now);
         return true;
     }
@@ -161,7 +156,7 @@ protected:
         MsgHeader* head = conn_.TcpFront(now);
         if(conn_.IsClosed()) {
             int sys_errno;
-            const char* reason = conn_.GetCloseReason(sys_errno);
+            const char* reason = conn_.GetCloseReason(&sys_errno);
             static_cast<Derived*>(this)->OnDisconnected(reason, sys_errno);
             return;
         }
@@ -196,3 +191,4 @@ private:
     std::string ptcp_dir_;
     Connection conn_;
 };
+} // namespace tcpshm

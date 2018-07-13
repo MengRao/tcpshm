@@ -5,6 +5,7 @@
 #include "cpupin.h"
 
 using namespace std;
+using namespace tcpshm;
 
 struct ClientConf : public CommonConf
 {
@@ -16,7 +17,7 @@ struct ClientConf : public CommonConf
     static const int64_t ConnectionTimeout = 10 * Second;
     static const int64_t HeartBeatInverval = 3 * Second;
 
-    using ConnectionUserData = int;
+    using ConnectionUserData = char;
 };
 
 class EchoClient;
@@ -48,7 +49,7 @@ public:
         long before = rdtsc();
         if(use_shm) {
             thread shm_thr([this]() {
-                // cpupin(6);
+                cpupin(6);
                 while(!conn->IsClosed()) {
                     if(PollNum()) {
                         conn->RequestClose();
@@ -58,14 +59,14 @@ public:
                 }
             });
 
-            // cpupin(7);
+            cpupin(7);
             while(!conn->IsClosed()) {
                 PollTcp(rdtsc());
             }
             shm_thr.join();
         }
         else {
-            // cpupin(7);
+            cpupin(7);
             while(!conn->IsClosed()) {
                 if(PollNum()) {
                     conn->RequestClose();
@@ -111,9 +112,7 @@ private:
         header->msg_type = T::msg_type;
         T* msg = (T*)(header + 1);
         for(auto& v : msg->val) v = (*send_num)++;
-        // msg->time = rdtsc();
         conn->Push();
-        // cout << "sent, send_num: " << (*send_num) << endl;
         return true;
     }
 
@@ -124,7 +123,6 @@ private:
                 cout << "bad: v: " << v << " recv_num: " << (*recv_num) << endl;
                 exit(1);
             }
-            // cout << "ok v: " << v << endl;
             (*recv_num)++;
         }
     }

@@ -3,7 +3,7 @@
 #include "mmap.h"
 #include "string.h"
 
-#include <bits/stdc++.h>
+namespace tcpshm {
 
 // HeartbeatMsg is special that it only has MsgHeader
 struct HeartbeatMsg
@@ -51,7 +51,6 @@ public:
         if(!q_) {
             q_ = my_mmap<PTCPQ>(ptcp_queue_file, false, error_msg);
             if(!q_) return false;
-            q_->Print();
         }
         return true;
     }
@@ -91,6 +90,10 @@ public:
     void Push() {
         q_->Push();
         SendPending();
+    }
+
+    void PushMore() {
+        q_->Push();
     }
 
     // safe if IsClosed
@@ -150,15 +153,9 @@ public:
 
     // we have consumed the msg we got from Front()
     void Pop() {
-        q_->MyAck()++;
         MsgHeader* header = (MsgHeader*)(recvbuf_ + readidx_);
         readidx_ += (header->size + 7) & -8;
-    }
-
-    void PushAndPop() {
-        q_->Push();
-        Pop();
-        SendPending();
+        q_->MyAck()++;
     }
 
     // safe if IsClosed
@@ -170,11 +167,8 @@ public:
             hbmsg_.ack_seq = q_->MyAck();
         }
         int sent = ::send(sockfd_, &hbmsg_, sizeof(hbmsg_), MSG_NOSIGNAL);
-        if(sent < 0 && errno == EAGAIN) {
-            return;
-        }
+        if(sent < 0 && errno == EAGAIN) return;
         if(sent != sizeof(MsgHeader)) { // for simplicity, we see partial sendout as error
-            std::cout << "SendPending error" << std::endl;
             Close("Send error", sent < 0 ? errno : 0);
             return;
         }
@@ -188,11 +182,10 @@ public:
         const char* p = (char*)q_->GetSendable(blk_sz);
         if(blk_sz == 0) return false;
         uint32_t size = blk_sz << 3;
-        while(size > 0) {
+        do {
             int sent = ::send(sockfd_, p, size, MSG_NOSIGNAL);
             if(sent < 0) {
                 if(errno != EAGAIN || (size & 7)) {
-                    std::cout << "SendPending error, size: " << size << std::endl;
                     Close("Send error", errno);
                     return false;
                 }
@@ -201,7 +194,7 @@ public:
             }
             p += sent;
             size -= sent;
-        }
+        } while(size > 0);
         int sent_blk = blk_sz - (size >> 3);
         if(sent_blk > 0) {
             send_time_ = now_;
@@ -214,8 +207,8 @@ public:
         return sockfd_ < 0;
     }
 
-    const char* GetCloseReason(int& sys_errno) {
-        sys_errno = close_errno_;
+    const char* GetCloseReason(int* sys_errno) {
+        *sys_errno = close_errno_;
         return close_reason_;
     }
 
@@ -225,10 +218,8 @@ public:
 
     void Close(const char* reason, int sys_errno) {
         if(sockfd_ < 0) return;
-        std::cout << "Close: " << reason << " sys_errno: " << strerror(sys_errno) << std::endl;
         ::close(sockfd_);
         sockfd_ = -1;
-        // writeidx_ = readidx_ = nextmsg_idx_ = 0;
         close_reason_ = reason;
         close_errno_ = sys_errno;
     }
@@ -263,7 +254,7 @@ private:
 
 private:
     typedef PTCPQueue<Conf::TcpQueueSize> PTCPQ;
-    PTCPQ* q_ = nullptr; // may be mmaped to file, or nullptr
+    PTCPQ* q_ = nullptr; // may be mmaped to file
     int sockfd_ = -1;
     const char* close_reason_ = "nil";
     int close_errno_ = 0;
@@ -279,4 +270,4 @@ private:
 
     uint32_t last_my_ack_ = 0;
 };
-
+} // namespace tcpshm

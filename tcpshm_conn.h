@@ -3,11 +3,79 @@
 #include "spsc_varq.h"
 #include "mmap.h"
 
+namespace tcpshm {
 
 template<class Conf>
 class TcpShmConnection
 {
 public:
+    std::string GetPtcpFile() {
+        return std::string(ptcp_dir_) + "/" + local_name_ + "_" + remote_name_ + ".ptcp";
+    }
+
+    bool IsClosed() {
+        return ptcp_conn_.IsClosed();
+    }
+
+    void RequestClose() {
+        ptcp_conn_.RequestClose();
+    }
+
+    const char* GetCloseReason(int* sys_errno) {
+        return ptcp_conn_.GetCloseReason(sys_errno);
+    }
+
+    char* GetRemoteName() {
+        return remote_name_;
+    }
+
+    const char* GetLocalName() {
+        return local_name_;
+    }
+
+    const char* GetPtcpDir() {
+        return ptcp_dir_;
+    }
+
+    MsgHeader* Alloc(uint16_t size) {
+        if(shm_sendq_) return shm_sendq_->Alloc(size);
+        return ptcp_conn_.Alloc(size);
+    }
+
+    void Push() {
+        if(shm_sendq_)
+            shm_sendq_->Push();
+        else
+            ptcp_conn_.Push();
+    }
+
+    void PushMore() {
+        if(shm_sendq_)
+            shm_sendq_->Push();
+        else
+            ptcp_conn_.PushMore();
+    }
+
+    MsgHeader* Front() {
+        if(shm_recvq_) return shm_recvq_->Front();
+        return ptcp_conn_.Front();
+    }
+
+    void Pop() {
+        if(shm_recvq_)
+            shm_recvq_->Pop();
+        else
+            ptcp_conn_.Pop();
+    }
+
+    typename Conf::ConnectionUserData user_data;
+
+private:
+    template<class T1, class T2>
+    friend class TcpShmClient;
+    template<class T1, class T2>
+    friend class TcpShmServer;
+
     TcpShmConnection() {
         remote_name_[0] = 0;
     }
@@ -17,8 +85,7 @@ public:
         local_name_ = local_name;
     }
 
-    bool OpenFile(bool use_shm,
-                  const char** error_msg) {
+    bool OpenFile(bool use_shm, const char** error_msg) {
         if(use_shm) {
             std::string shm_send_file = std::string("/") + local_name_ + "_" + remote_name_ + ".shm";
             std::string shm_recv_file = std::string("/") + remote_name_ + "_" + local_name_ + ".shm";
@@ -34,9 +101,6 @@ public:
         }
         std::string ptcp_send_file = GetPtcpFile();
         return ptcp_conn_.OpenFile(ptcp_send_file.c_str(), error_msg);
-    }
-    std::string GetPtcpFile() {
-        return std::string(ptcp_dir_) + "/" + local_name_ + "_" + remote_name_ + ".ptcp";
     }
 
     bool GetSeq(uint32_t* local_ack_seq, uint32_t* local_seq_start, uint32_t* local_seq_end, const char** error_msg) {
@@ -76,44 +140,6 @@ public:
         ptcp_conn_.Open(sock_fd, remote_ack_seq, now);
     }
 
-    bool IsClosed() {
-        return ptcp_conn_.IsClosed();
-    }
-
-    void RequestClose() {
-        ptcp_conn_.RequestClose();
-    }
-
-    const char* GetCloseReason(int& sys_errno) {
-        return ptcp_conn_.GetCloseReason(sys_errno);
-    }
-
-    char* GetRemoteName() {
-        return remote_name_;
-    }
-
-    const char* GetLocalName() {
-        return local_name_;
-    }
-
-    const char* GetPtcpDir() {
-        return ptcp_dir_;
-    }
-
-    MsgHeader* Alloc(uint16_t size) {
-        if(shm_sendq_) {
-            return shm_sendq_->Alloc(size);
-        }
-        return ptcp_conn_.Alloc(size);
-    }
-
-    void Push() {
-        if(shm_sendq_) {
-            return shm_sendq_->Push();
-        }
-        return ptcp_conn_.Push();
-    }
-
     MsgHeader* TcpFront(int64_t now) {
         ptcp_conn_.SendHB(now);
         return ptcp_conn_.Front(); // for shm, we need to recv HB and Front() always return nullptr
@@ -122,28 +148,6 @@ public:
     MsgHeader* ShmFront() {
         return shm_recvq_->Front();
     }
-
-    void Pop() {
-        if(shm_recvq_) {
-            shm_recvq_->Pop();
-        }
-        else {
-            ptcp_conn_.Pop();
-        }
-    }
-
-    void PushAndPop() {
-        if(shm_sendq_) {
-            shm_sendq_->Push();
-            shm_recvq_->Pop();
-        }
-        else {
-            ptcp_conn_.PushAndPop();
-        }
-    }
-
-public:
-    typename Conf::ConnectionUserData user_data;
 
 private:
     const char* local_name_;
@@ -154,4 +158,4 @@ private:
     alignas(64) SHMQ* shm_sendq_ = nullptr;
     SHMQ* shm_recvq_ = nullptr;
 };
-
+} // namespace tcpshm

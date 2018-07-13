@@ -5,11 +5,8 @@
 #include "cpupin.h"
 
 using namespace std;
+using namespace tcpshm;
 
-struct UserData
-{
-    int v = 0;
-};
 
 struct ServerConf : public CommonConf
 {
@@ -17,17 +14,17 @@ struct ServerConf : public CommonConf
 
     static const int MaxNewConnections = 5;
     static const int MaxShmConnsPerGrp = 4;
-    static const int MaxShmGrps = 2;
+    static const int MaxShmGrps = 1;
     static const int MaxTcpConnsPerGrp = 4;
     static const int MaxTcpGrps = 1;
     static const int TcpQueueSize = 10240;   // must be multiple of 8
     static const int TcpRecvBufSize = 10240; // must be multiple of 8
 
-    static const int64_t NewConnectionTimeout = 2 * Second;
+    static const int64_t NewConnectionTimeout = 3 * Second;
     static const int64_t ConnectionTimeout = 10 * Second;
     static const int64_t HeartBeatInverval = 3 * Second;
 
-    using ConnectionUserData = UserData;
+    using ConnectionUserData = char;
 };
 
 class EchoServer;
@@ -52,7 +49,7 @@ public:
         vector<thread> threads;
         for(int i = 0; i < ServerConf::MaxTcpGrps; i++) {
             threads.emplace_back([this, i]() {
-                // cpupin(i);
+                cpupin(i);
                 while(!stopped) {
                     PollTcp(rdtsc(), i);
                 }
@@ -61,14 +58,14 @@ public:
 
         for(int i = 0; i < ServerConf::MaxShmGrps; i++) {
             threads.emplace_back([this, i]() {
-                // cpupin(ServerConf::MaxTcpGrps + i);
+                cpupin(ServerConf::MaxTcpGrps + i);
                 while(!stopped) {
                     PollShm(i);
                 }
             });
         }
 
-        // cpupin(ServerConf::MaxTcpGrps + ServerConf::MaxShmGrps);
+        cpupin(ServerConf::MaxTcpGrps + ServerConf::MaxShmGrps);
 
         while(!stopped) {
             PollCtl(rdtsc());
@@ -90,8 +87,8 @@ private:
 
     // if accept, set user_data in login_rsp, and return grpid with respect to tcp or shm
     // else set error_msg in login_rsp if possible, and return -1
-    int OnNewConnection(const struct sockaddr_in* addr, const LoginMsg* login, LoginRspMsg* login_rsp) {
-        cout << "New Connection from: " << inet_ntoa(addr->sin_addr) << ":" << ntohs(addr->sin_port)
+    int OnNewConnection(const struct sockaddr_in& addr, const LoginMsg* login, LoginRspMsg* login_rsp) {
+        cout << "New Connection from: " << inet_ntoa(addr.sin_addr) << ":" << ntohs(addr.sin_port)
              << ", name: " << login->client_name << ", use_shm: " << (bool)login->use_shm << endl;
         auto hh = hash<string>{}(string(login->client_name));
         if(login->use_shm) {
@@ -114,41 +111,42 @@ private:
         }
     }
 
-    void OnClientLogon(struct sockaddr_in* addr, Connection* conn) {
-        cout << "Client Logon from: " << inet_ntoa(addr->sin_addr) << ":" << ntohs(addr->sin_port)
-             << ", name: " << conn->GetRemoteName() << endl;
+    void OnClientLogon(const struct sockaddr_in& addr, Connection& conn) {
+        cout << "Client Logon from: " << inet_ntoa(addr.sin_addr) << ":" << ntohs(addr.sin_port)
+             << ", name: " << conn.GetRemoteName() << endl;
     }
 
-    void OnClientDisconnected(Connection* conn, const char* reason, int sys_errno) {
-        cout << "Client disconnected, name: " << conn->GetRemoteName() << " reason: " << reason
+    void OnClientDisconnected(Connection& conn, const char* reason, int sys_errno) {
+        cout << "Client disconnected,.name: " << conn.GetRemoteName() << " reason: " << reason
              << " syserrno: " << strerror(sys_errno) << endl;
     }
 
-    void OnClientFileError(Connection* conn, const char* reason, int sys_errno) {
-        cout << "Client file errno, name: " << conn->GetRemoteName() << " reason: " << reason
+    void OnClientFileError(Connection& conn, const char* reason, int sys_errno) {
+        cout << "Client file errno, name: " << conn.GetRemoteName() << " reason: " << reason
              << " syserrno: " << strerror(sys_errno) << endl;
     }
 
-    void OnSeqNumberMismatch(Connection* conn,
+    void OnSeqNumberMismatch(Connection& conn,
                              uint32_t local_ack_seq,
                              uint32_t local_seq_start,
                              uint32_t local_seq_end,
                              uint32_t remote_ack_seq,
                              uint32_t remote_seq_start,
                              uint32_t remote_seq_end) {
-        cout << "Client seq number mismatch, name: " << conn->GetRemoteName() << " ptcp file: " << conn->GetPtcpFile()
+        cout << "Client seq number mismatch, name: " << conn.GetRemoteName() << " ptcp file: " << conn.GetPtcpFile()
              << " local_ack_seq: " << local_ack_seq << " local_seq_start: " << local_seq_start
              << " local_seq_end: " << local_seq_end << " remote_ack_seq: " << remote_ack_seq
              << " remote_seq_start: " << remote_seq_start << " remote_seq_end: " << remote_seq_end << endl;
     }
 
-    void OnClientMsg(Connection* conn, MsgHeader* recv_header) {
+    void OnClientMsg(Connection& conn, MsgHeader* recv_header) {
         auto size = recv_header->size - sizeof(MsgHeader);
-        MsgHeader* send_header = conn->Alloc(size);
+        MsgHeader* send_header = conn.Alloc(size);
         if(!send_header) return;
         send_header->msg_type = recv_header->msg_type;
         memcpy(send_header + 1, recv_header + 1, size);
-        conn->PushAndPop();
+        conn.Pop();
+        conn.Push();
     }
 
     static volatile bool stopped;

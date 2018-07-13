@@ -1,6 +1,8 @@
 #pragma once
 #include "msg_header.h"
 
+namespace tcpshm {
+
 template<uint32_t Bytes>
 class SPSCVarQueue
 {
@@ -11,7 +13,6 @@ public:
     MsgHeader* Alloc(uint16_t size) {
         size += sizeof(MsgHeader);
         uint32_t blk_sz = (size + sizeof(Block) - 1) / sizeof(Block);
-        // static_assert(blk_sz <= BLK_CNT, "msg size is larger than queue size!");
         uint32_t padding_sz = BLK_CNT - (write_idx % BLK_CNT);
         bool rewind = blk_sz > padding_sz;
         int32_t min_read_idx = write_idx + blk_sz + (rewind ? padding_sz : 0) - BLK_CNT;
@@ -68,4 +69,4 @@ private:
     uint32_t read_idx_cach = 0; // used only by writing thread
     alignas(64) uint32_t read_idx = 0;
 };
-
+} // namespace tcpshm

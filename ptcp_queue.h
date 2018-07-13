@@ -1,6 +1,7 @@
 #pragma once
 #include "msg_header.h"
-#include <bits/stdc++.h>
+
+namespace tcpshm {
 
 // Simple single thread persist Queue that can be mmap-ed to a file
 template<uint32_t Bytes>
@@ -23,10 +24,6 @@ public:
         }
         MsgHeader& header = blk_[write_idx_];
         header.size = size;
-        /*
-        std::cout << "Alloc read_idx_: " << read_idx_ << " send_idx_: " << send_idx_ << " write_idx_: " << write_idx_
-                  << std::endl;
-                  */
         return &header;
     }
 
@@ -35,10 +32,6 @@ public:
         uint32_t blk_sz = (header.size + sizeof(MsgHeader) - 1) / sizeof(MsgHeader);
         header.ack_seq = ack_seq_num_;
         write_idx_ += blk_sz;
-        /*
-        std::cout << "Push read_idx_: " << read_idx_ << " send_idx_: " << send_idx_ << " write_idx_: " << write_idx_
-                  << std::endl;
-                  */
     }
 
     MsgHeader* GetSendable(int& blk_sz) {
@@ -87,11 +80,6 @@ public:
         return true;
     }
 
-    void Print() {
-        std::cout << "Print read_idx_: " << read_idx_ << " send_idx_: " << send_idx_ << " write_idx_: " << write_idx_
-                  << " read_seq_num_: " << read_seq_num_ << " ack_seq_num_: " << ack_seq_num_ << std::endl;
-    }
-
 private:
     MsgHeader blk_[BLK_CNT];
     // invariant: read_idx_ <= send_idx_ <= write_idx_
@@ -102,4 +90,4 @@ private:
     uint32_t read_seq_num_; // the seq_num_ of msg read_idx_ points to
     uint32_t ack_seq_num_;
 };
-
+} // namespace tcpshm
