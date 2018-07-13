@@ -18,6 +18,8 @@ struct LoginMsgTpl
     char client_name[Conf::NameSize];
     char last_server_name[Conf::NameSize];
     char use_shm;
+    uint32_t client_seq_start;
+    uint32_t client_seq_end;
     typename Conf::LoginUserData user_data;
 };
 
@@ -26,7 +28,10 @@ struct LoginRspMsgTpl
 {
     static const uint16_t msg_type = 2;
     char server_name[Conf::NameSize];
+    int status;         // 0: OK, 1: seqnum mismatch, 2: other error
     char error_msg[32]; // empty error_msg means success
+    uint32_t server_seq_start;
+    uint32_t server_seq_end;
     typename Conf::LoginRspUserData user_data;
 };
 
@@ -41,18 +46,23 @@ public:
         hbmsg_.ack_seq = 0;
     }
 
-    bool Reset(const char* ptcp_queue_file, bool use_shm, uint32_t* local_ack_seq, const char** error_msg) {
-        if(!use_shm && !q_) {
+    bool OpenFile(const char* ptcp_queue_file,
+                  const char** error_msg) {
+        if(!q_) {
             q_ = my_mmap<PTCPQ>(ptcp_queue_file, false, error_msg);
             if(!q_) return false;
-            q_->Disconnect();
             q_->Print();
         }
-        if(q_)
-            *local_ack_seq = q_->MyAck();
-        else
-            *local_ack_seq = 0;
         return true;
+    }
+
+    bool GetSeq(uint32_t* local_ack_seq, uint32_t* local_seq_start, uint32_t* local_seq_end) {
+        *local_ack_seq = q_->MyAck();
+        return q_->SanityCheckAndGetSeq(local_seq_start, local_seq_end);
+    }
+
+    void Reset() {
+        memset(q_, 0, sizeof(PTCPQ));
     }
 
     void Release() {
@@ -69,7 +79,7 @@ public:
         writeidx_ = readidx_ = nextmsg_idx_ = 0;
         recv_time_ = send_time_ = now_ = now;
         if(q_) {
-            q_->Ack(remote_ack_seq);
+            q_->LoginAck(remote_ack_seq);
             SendPending();
         }
     }
@@ -99,11 +109,6 @@ public:
             last_my_ack_ = q_->MyAck();
             return header;
         }
-        /*
-        if(readidx_ == writeidx_) {
-            readidx_ = writeidx_ = nextmsg_idx_ = 0;
-        }
-        */
         if(readidx_ > 0) {
             int remain_size = writeidx_ - readidx_;
             if(remain_size > 0) {
@@ -119,21 +124,23 @@ public:
             readidx_ = 0;
         }
 
-        writeidx_ += DoRecv(Conf::TcpRecvBufSize - writeidx_);
-        while(writeidx_ - nextmsg_idx_ >= 8) {
-            MsgHeader* header = (MsgHeader*)(recvbuf_ + nextmsg_idx_);
-            q_->Ack(header->ack_seq);
-            int msg_size = (header->size + 7) & -8;
-            if(msg_size > Conf::TcpRecvBufSize) {
-                Close("Msg size larger than recv buf", 0);
-                return nullptr;
+        if(int len = DoRecv(Conf::TcpRecvBufSize - writeidx_)) {
+            writeidx_ += len;
+            while(writeidx_ - nextmsg_idx_ >= 8) {
+                MsgHeader* header = (MsgHeader*)(recvbuf_ + nextmsg_idx_);
+                q_->Ack(header->ack_seq);
+                int msg_size = (header->size + 7) & -8;
+                if(msg_size > Conf::TcpRecvBufSize) {
+                    Close("Msg size larger than recv buf", 0);
+                    return nullptr;
+                }
+                if(writeidx_ - nextmsg_idx_ < msg_size) break;
+                // we have got a full msg
+                if(header->msg_type == HeartbeatMsg::msg_type && readidx_ == nextmsg_idx_) {
+                    readidx_ += msg_size;
+                }
+                nextmsg_idx_ += msg_size;
             }
-            if(writeidx_ - nextmsg_idx_ < msg_size) break;
-            // we have got a full msg
-            if(header->msg_type == HeartbeatMsg::msg_type && readidx_ == nextmsg_idx_) {
-                readidx_ += msg_size;
-            }
-            nextmsg_idx_ += msg_size;
         }
         if(readidx_ != nextmsg_idx_) {
             return (MsgHeader*)(recvbuf_ + readidx_);
@@ -167,6 +174,7 @@ public:
             return;
         }
         if(sent != sizeof(MsgHeader)) { // for simplicity, we see partial sendout as error
+            std::cout << "SendPending error" << std::endl;
             Close("Send error", sent < 0 ? errno : 0);
             return;
         }
@@ -184,7 +192,7 @@ public:
             int sent = ::send(sockfd_, p, size, MSG_NOSIGNAL);
             if(sent < 0) {
                 if(errno != EAGAIN || (size & 7)) {
-                    // std::cout << "SendPending error" << std::endl;
+                    std::cout << "SendPending error, size: " << size << std::endl;
                     Close("Send error", errno);
                     return false;
                 }
@@ -217,12 +225,9 @@ public:
 
     void Close(const char* reason, int sys_errno) {
         if(sockfd_ < 0) return;
-        // std::cout << "Close: " << reason << std::endl;
+        std::cout << "Close: " << reason << " sys_errno: " << strerror(sys_errno) << std::endl;
         ::close(sockfd_);
         sockfd_ = -1;
-        if(q_) {
-            q_->Disconnect();
-        }
         // writeidx_ = readidx_ = nextmsg_idx_ = 0;
         close_reason_ = reason;
         close_errno_ = sys_errno;
@@ -234,6 +239,7 @@ public:
 
 private:
     int DoRecv(int len) {
+        if(len == 0) return 0;
         int ret = ::recv(sockfd_, recvbuf_ + writeidx_, len, 0);
         if(ret <= 0) {
             if(ret < 0) {

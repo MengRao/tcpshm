@@ -23,12 +23,11 @@ public:
             }
         }
         if(rewind) {
-            blk[write_idx % BLK_CNT].header.size = 0; //-(int32_t)padding_sz;
+            blk[write_idx % BLK_CNT].header.size = 0;
             write_idx += padding_sz;
         }
         MsgHeader& header = blk[write_idx % BLK_CNT].header;
         header.size = size;
-        // header.msg_type = T::msg_type; // we can also let caller set msg_type since it's not needed by Queue
         return &header;
     }
 

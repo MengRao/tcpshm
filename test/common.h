@@ -4,7 +4,6 @@
 struct CommonConf
 {
     static const int NameSize = 16;
-
     static const int ShmQueueSize = 2048; // must be power of 2
 
     using LoginUserData = char;

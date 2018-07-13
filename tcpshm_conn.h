@@ -17,12 +17,11 @@ public:
         local_name_ = local_name;
     }
 
-    bool Reset(bool use_shm, uint32_t* local_ack_seq, const char** error_msg) {
-        std::string ptcp_send_file = std::string(ptcp_dir_) + "/" + local_name_ + "_" + remote_name_ + ".ptcp";
-        std::string shm_send_file = std::string("/") + local_name_ + "_" + remote_name_ + ".shm";
-        std::string shm_recv_file = std::string("/") + remote_name_ + "_" + local_name_ + ".shm";
-
+    bool OpenFile(bool use_shm,
+                  const char** error_msg) {
         if(use_shm) {
+            std::string shm_send_file = std::string("/") + local_name_ + "_" + remote_name_ + ".shm";
+            std::string shm_recv_file = std::string("/") + remote_name_ + "_" + local_name_ + ".shm";
             if(!shm_sendq_) {
                 shm_sendq_ = my_mmap<SHMQ>(shm_send_file.c_str(), true, error_msg);
                 if(!shm_sendq_) return false;
@@ -31,8 +30,33 @@ public:
                 shm_recvq_ = my_mmap<SHMQ>(shm_recv_file.c_str(), true, error_msg);
                 if(!shm_recvq_) return false;
             }
+            return true;
         }
-        return ptcp_conn_.Reset(ptcp_send_file.c_str(), use_shm, local_ack_seq, error_msg);
+        std::string ptcp_send_file = GetPtcpFile();
+        return ptcp_conn_.OpenFile(ptcp_send_file.c_str(), error_msg);
+    }
+    std::string GetPtcpFile() {
+        return std::string(ptcp_dir_) + "/" + local_name_ + "_" + remote_name_ + ".ptcp";
+    }
+
+    bool GetSeq(uint32_t* local_ack_seq, uint32_t* local_seq_start, uint32_t* local_seq_end, const char** error_msg) {
+        if(shm_sendq_) return true;
+        if(!ptcp_conn_.GetSeq(local_ack_seq, local_seq_start, local_seq_end)) {
+            *error_msg = "Ptcp file corrupt";
+            errno = 0;
+            return false;
+        }
+        return true;
+    }
+
+    void Reset() {
+        if(shm_sendq_) {
+            memset(shm_sendq_, 0, sizeof(SHMQ));
+            memset(shm_recvq_, 0, sizeof(SHMQ));
+        }
+        else {
+            ptcp_conn_.Reset();
+        }
     }
 
     void Release() {

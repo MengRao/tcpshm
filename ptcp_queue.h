@@ -48,37 +48,43 @@ public:
 
     void Sendout(int blk_sz) {
         send_idx_ += blk_sz;
-        /*
-        std::cout << "Sendout read_idx_: " << read_idx_ << " send_idx_: " << send_idx_ << " write_idx_: " << write_idx_
-                  << std::endl;
-                  */
     }
 
-    void Disconnect() {
+    void LoginAck(uint32_t ack_seq) {
+        Ack(ack_seq);
         send_idx_ = read_idx_;
     }
 
     // the next seq_num peer side expect
     void Ack(uint32_t ack_seq) {
-        /*
-        std::cout << "Ack ack_seq: " << ack_seq << " read_seq_num_: " << read_seq_num_ << " read_idx_: " << read_idx_
-                  << " send_idx_: " << send_idx_ << " write_idx_: " << write_idx_ << std::endl;
-                  */
-        while(read_idx_ < write_idx_) {
-            if(read_seq_num_ >= ack_seq) break;
+        if((int)(ack_seq - read_seq_num_) <= 0) return; // if ack_seq is not newer than read_seq_num_
+        // we assume that a successfuly logined client will not attack us
+        // so_seq will never go beyond the msg write_idx_ points to during a connection lifecycle
+        do {
             read_idx_ += (blk_[read_idx_].size + sizeof(MsgHeader) - 1) / sizeof(MsgHeader);
             read_seq_num_++;
-        }
+        } while(read_seq_num_ != ack_seq);
         if(read_idx_ == write_idx_) {
             read_idx_ = write_idx_ = send_idx_ = 0;
-        }
-        else if(send_idx_ < read_idx_) { // could happen on reconnect recovery
-            send_idx_ = read_idx_;
         }
     }
 
     uint32_t& MyAck() {
         return ack_seq_num_;
+    }
+
+    bool SanityCheckAndGetSeq(uint32_t* seq_start, uint32_t* seq_end) {
+        uint32_t end = read_seq_num_;
+        uint32_t idx = read_idx_;
+        while(idx < write_idx_) {
+            if((int)(ack_seq_num_ - blk_[idx].ack_seq) < 0) return false; // ack_seq in this msg is too new
+            idx += (blk_[idx].size + sizeof(MsgHeader) - 1) / sizeof(MsgHeader);
+            end++;
+        }
+        if(idx != write_idx_) return false;
+        *seq_start = read_seq_num_;
+        *seq_end = end;
+        return true;
     }
 
     void Print() {

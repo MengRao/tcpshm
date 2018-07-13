@@ -9,7 +9,7 @@
 
 #include <bits/stdc++.h>
 
-template<class EventHandler, class Conf>
+template<class Derived, class Conf>
 class TcpShmClient
 {
 public:
@@ -17,9 +17,9 @@ public:
     using LoginMsg = LoginMsgTpl<Conf>;
     using LoginRspMsg = LoginRspMsgTpl<Conf>;
 
-    TcpShmClient(const std::string& client_name, const std::string& ptcp_dir, EventHandler* handler)
-        : ptcp_dir_(ptcp_dir)
-        , handler_(handler) {
+protected:
+    TcpShmClient(const std::string& client_name, const std::string& ptcp_dir)
+        : ptcp_dir_(ptcp_dir) {
         strncpy(client_name_, client_name.c_str(), sizeof(client_name_) - 1);
         mkdir(ptcp_dir_.c_str(), 0755);
         client_name_[sizeof(client_name_) - 1] = 0;
@@ -32,7 +32,7 @@ public:
 
     bool Connect(bool use_shm, const char* server_ipv4, uint16_t server_port) {
         if(!conn_.IsClosed()) {
-            handler_->OnSystemError("already connected", 0);
+            static_cast<Derived*>(this)->OnSystemError("already connected", 0);
             return false;
         }
         const char* error_msg;
@@ -40,7 +40,7 @@ public:
             std::string last_server_name_file = std::string(ptcp_dir_) + "/" + client_name_ + ".lastserver";
             server_name_ = (char*)my_mmap<ServerName>(last_server_name_file.c_str(), false, &error_msg);
             if(!server_name_) {
-                handler_->OnSystemError(error_msg, errno);
+                static_cast<Derived*>(this)->OnSystemError(error_msg, errno);
                 return false;
             }
             strncpy(conn_.GetRemoteName(), server_name_, sizeof(ServerName));
@@ -53,14 +53,16 @@ public:
         strncpy(login->client_name, client_name_, sizeof(login->client_name));
         strncpy(login->last_server_name, server_name_, sizeof(login->last_server_name));
         login->use_shm = use_shm;
-        if(server_name_[0] && !conn_.Reset(use_shm, &sendbuf[0].ack_seq, &error_msg)) {
-            // we can not mmap to ptcp or chm files with filenames related to local and remote name
-            handler_->OnSystemError(error_msg, errno);
+        login->client_seq_start = login->client_seq_end = 0;
+        if(server_name_[0] &&
+           (!conn_.OpenFile(use_shm, &error_msg) ||
+            !conn_.GetSeq(&sendbuf[0].ack_seq, &login->client_seq_start, &login->client_seq_end, &error_msg))) {
+            static_cast<Derived*>(this)->OnSystemError(error_msg, errno);
             return false;
         }
         int fd;
         if((fd = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
-            handler_->OnSystemError("socket", errno);
+            static_cast<Derived*>(this)->OnSystemError("socket", errno);
             return false;
         }
         struct timeval timeout;
@@ -68,13 +70,13 @@ public:
         timeout.tv_usec = 0;
 
         if(setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, (char*)&timeout, sizeof(timeout)) < 0) {
-            handler_->OnSystemError("setsockopt SO_RCVTIMEO", errno);
+            static_cast<Derived*>(this)->OnSystemError("setsockopt SO_RCVTIMEO", errno);
             close(fd);
             return false;
         }
 
         if(setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, (char*)&timeout, sizeof(timeout)) < 0) {
-            handler_->OnSystemError("setsockopt SO_RCVTIMEO", errno);
+            static_cast<Derived*>(this)->OnSystemError("setsockopt SO_RCVTIMEO", errno);
             close(fd);
             return false;
         }
@@ -86,18 +88,19 @@ public:
         bzero(&(server_addr.sin_zero), 8);
 
         if(connect(fd, (struct sockaddr*)&server_addr, sizeof(server_addr)) == -1) {
-            handler_->OnSystemError("connect", errno);
+            static_cast<Derived*>(this)->OnSystemError("connect", errno);
             close(fd);
             return false;
         }
 
-        handler_->FillLoginUserData(&login->user_data);
+        static_cast<Derived*>(this)->FillLoginUserData(&login->user_data);
 
-        // std::cout << "LoginMsg, ack: " << sendbuf[0].ack_seq << std::endl;
+        std::cout << "LoginMsg, ack: " << sendbuf[0].ack_seq << " client_seq_start: " << login->client_seq_start
+                  << " client_seq_end: " << login->client_seq_end << std::endl;
 
         int ret = send(fd, sendbuf, sizeof(sendbuf), MSG_NOSIGNAL);
         if(ret != sizeof(sendbuf)) {
-            handler_->OnSystemError("send", ret < 0 ? errno : 0);
+            static_cast<Derived*>(this)->OnSystemError("send", ret < 0 ? errno : 0);
             close(fd);
             return false;
         }
@@ -105,19 +108,29 @@ public:
         MsgHeader recvbuf[1 + (sizeof(LoginRspMsg) + 7) / 8];
         ret = recv(fd, recvbuf, sizeof(recvbuf), 0);
         if(ret != sizeof(recvbuf)) {
-            handler_->OnSystemError("recv", ret < 0 ? errno : 0);
+            static_cast<Derived*>(this)->OnSystemError("recv", ret < 0 ? errno : 0);
             close(fd);
             return false;
         }
         LoginRspMsg* login_rsp = (LoginRspMsg*)(recvbuf + 1);
         if(recvbuf[0].size != sizeof(MsgHeader) + sizeof(LoginRspMsg) || recvbuf[0].msg_type != LoginRspMsg::msg_type ||
            login_rsp->server_name[0] == 0) {
-            handler_->OnSystemError("Invalid LoginRsp", 0);
+            static_cast<Derived*>(this)->OnSystemError("Invalid LoginRsp", 0);
             close(fd);
             return false;
         }
-        if(login_rsp->error_msg[0]) {
-            handler_->OnLoginReject(login_rsp);
+        if(login_rsp->status != 0) {
+            if(login_rsp->status == 1) { // seq number mismatch
+                static_cast<Derived*>(this)->OnSeqNumberMismatch(sendbuf[0].ack_seq,
+                                                                 login->client_seq_start,
+                                                                 login->client_seq_end,
+                                                                 recvbuf[0].ack_seq,
+                                                                 login_rsp->server_seq_start,
+                                                                 login_rsp->server_seq_end);
+            }
+            else {
+                static_cast<Derived*>(this)->OnLoginReject(login_rsp);
+            }
             close(fd);
             return false;
         }
@@ -127,14 +140,15 @@ public:
             conn_.Release();
             strncpy(server_name_, login_rsp->server_name, sizeof(ServerName));
             strncpy(conn_.GetRemoteName(), server_name_, sizeof(ServerName));
-            if(!conn_.Reset(use_shm, &sendbuf[0].ack_seq, &error_msg)) { // ack_seq is ignored
-                handler_->OnSystemError(error_msg, errno);
+            if(!conn_.OpenFile(use_shm, &error_msg)) {
+                static_cast<Derived*>(this)->OnSystemError(error_msg, errno);
                 close(fd);
                 return false;
             }
+            conn_.Reset();
         }
         fcntl(fd, F_SETFL, O_NONBLOCK);
-        int64_t now = handler_->OnLoginSuccess(login_rsp);
+        int64_t now = static_cast<Derived*>(this)->OnLoginSuccess(login_rsp);
 
         // std::cout << "LoginRspMsg, ack: " << recvbuf[0].ack_seq << std::endl;
 
@@ -148,18 +162,18 @@ public:
         if(conn_.IsClosed()) {
             int sys_errno;
             const char* reason = conn_.GetCloseReason(sys_errno);
-            handler_->OnDisconnected(reason, sys_errno);
+            static_cast<Derived*>(this)->OnDisconnected(reason, sys_errno);
             return;
         }
         if(head) {
-            handler_->OnServerMsg(head);
+            static_cast<Derived*>(this)->OnServerMsg(head);
         }
     }
 
     void PollShm() {
         MsgHeader* head = conn_.ShmFront();
         if(head) {
-            handler_->OnServerMsg(head);
+            static_cast<Derived*>(this)->OnServerMsg(head);
         }
     }
 
@@ -171,7 +185,7 @@ public:
         conn_.Release();
     }
 
-    Connection* getConnection() {
+    Connection* GetConnection() {
         return &conn_;
     }
 
@@ -180,6 +194,5 @@ private:
     using ServerName = std::array<char, Conf::NameSize>;
     char* server_name_ = nullptr;
     std::string ptcp_dir_;
-    EventHandler* handler_;
     Connection conn_;
 };

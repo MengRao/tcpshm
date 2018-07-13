@@ -2,6 +2,7 @@
 #include <bits/stdc++.h>
 #include "rdtsc.h"
 #include "common.h"
+#include "cpupin.h"
 
 using namespace std;
 
@@ -19,8 +20,8 @@ struct ServerConf : public CommonConf
     static const int MaxShmGrps = 2;
     static const int MaxTcpConnsPerGrp = 4;
     static const int MaxTcpGrps = 1;
-    static const int TcpQueueSize = 40960;   // must be multiple of 8
-    static const int TcpRecvBufSize = 40960; // must be multiple of 8
+    static const int TcpQueueSize = 10240;   // must be multiple of 8
+    static const int TcpRecvBufSize = 10240; // must be multiple of 8
 
     static const int64_t NewConnectionTimeout = 2 * Second;
     static const int64_t ConnectionTimeout = 10 * Second;
@@ -32,11 +33,11 @@ struct ServerConf : public CommonConf
 class EchoServer;
 using TSServer = TcpShmServer<EchoServer, ServerConf>;
 
-class EchoServer
+class EchoServer : public TSServer
 {
 public:
     EchoServer(const std::string& ptcp_dir, const std::string& name)
-        : srv(ptcp_dir, name, this) {
+        : TSServer(ptcp_dir, name) {
         // capture SIGTERM to gracefully stop the server
         // we can also send other signals to crash the server and see how it recovers on restart
         signal(SIGTERM, EchoServer::SignalHandler);
@@ -47,45 +48,49 @@ public:
     }
 
     void Run(const char* listen_ipv4, uint16_t listen_port) {
-        if(!srv.Start(listen_ipv4, listen_port)) return;
+        if(!Start(listen_ipv4, listen_port)) return;
         vector<thread> threads;
         for(int i = 0; i < ServerConf::MaxTcpGrps; i++) {
             threads.emplace_back([this, i]() {
+                // cpupin(i);
                 while(!stopped) {
-                    srv.PollTcp(rdtsc(), i);
+                    PollTcp(rdtsc(), i);
                 }
             });
         }
 
         for(int i = 0; i < ServerConf::MaxShmGrps; i++) {
             threads.emplace_back([this, i]() {
+                // cpupin(ServerConf::MaxTcpGrps + i);
                 while(!stopped) {
-                    srv.PollShm(i);
+                    PollShm(i);
                 }
             });
         }
 
+        // cpupin(ServerConf::MaxTcpGrps + ServerConf::MaxShmGrps);
+
         while(!stopped) {
-            srv.PollCtl(rdtsc());
+            PollCtl(rdtsc());
         }
 
         for(auto& thr : threads) {
             thr.join();
         }
-        srv.Stop();
+        Stop();
         cout << "Server stopped" << endl;
     }
 
 private:
     friend TSServer;
+
     void OnSystemError(const char* errno_msg, int sys_errno) {
         cout << "System Error: " << errno_msg << " syserrno: " << strerror(sys_errno) << endl;
     }
 
     // if accept, set user_data in login_rsp, and return grpid with respect to tcp or shm
     // else set error_msg in login_rsp if possible, and return -1
-    int
-    OnNewConnection(const struct sockaddr_in* addr, const TSServer::LoginMsg* login, TSServer::LoginRspMsg* login_rsp) {
+    int OnNewConnection(const struct sockaddr_in* addr, const LoginMsg* login, LoginRspMsg* login_rsp) {
         cout << "New Connection from: " << inet_ntoa(addr->sin_addr) << ":" << ntohs(addr->sin_port)
              << ", name: " << login->client_name << ", use_shm: " << (bool)login->use_shm << endl;
         auto hh = hash<string>{}(string(login->client_name));
@@ -109,18 +114,35 @@ private:
         }
     }
 
-
-    void OnClientLogon(struct sockaddr_in* addr, TSServer::Connection* conn) {
+    void OnClientLogon(struct sockaddr_in* addr, Connection* conn) {
         cout << "Client Logon from: " << inet_ntoa(addr->sin_addr) << ":" << ntohs(addr->sin_port)
              << ", name: " << conn->GetRemoteName() << endl;
     }
 
-    void OnClientDisconnected(TSServer::Connection* conn, const char* reason, int sys_errno) {
+    void OnClientDisconnected(Connection* conn, const char* reason, int sys_errno) {
         cout << "Client disconnected, name: " << conn->GetRemoteName() << " reason: " << reason
              << " syserrno: " << strerror(sys_errno) << endl;
     }
 
-    void OnClientMsg(TSServer::Connection* conn, MsgHeader* recv_header) {
+    void OnClientFileError(Connection* conn, const char* reason, int sys_errno) {
+        cout << "Client file errno, name: " << conn->GetRemoteName() << " reason: " << reason
+             << " syserrno: " << strerror(sys_errno) << endl;
+    }
+
+    void OnSeqNumberMismatch(Connection* conn,
+                             uint32_t local_ack_seq,
+                             uint32_t local_seq_start,
+                             uint32_t local_seq_end,
+                             uint32_t remote_ack_seq,
+                             uint32_t remote_seq_start,
+                             uint32_t remote_seq_end) {
+        cout << "Client seq number mismatch, name: " << conn->GetRemoteName() << " ptcp file: " << conn->GetPtcpFile()
+             << " local_ack_seq: " << local_ack_seq << " local_seq_start: " << local_seq_start
+             << " local_seq_end: " << local_seq_end << " remote_ack_seq: " << remote_ack_seq
+             << " remote_seq_start: " << remote_seq_start << " remote_seq_end: " << remote_seq_end << endl;
+    }
+
+    void OnClientMsg(Connection* conn, MsgHeader* recv_header) {
         auto size = recv_header->size - sizeof(MsgHeader);
         MsgHeader* send_header = conn->Alloc(size);
         if(!send_header) return;
@@ -129,7 +151,6 @@ private:
         conn->PushAndPop();
     }
 
-    TSServer srv;
     static volatile bool stopped;
 };
 

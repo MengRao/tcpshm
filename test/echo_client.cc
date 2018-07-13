@@ -2,6 +2,7 @@
 #include <bits/stdc++.h>
 #include "rdtsc.h"
 #include "common.h"
+#include "cpupin.h"
 
 using namespace std;
 
@@ -9,8 +10,8 @@ struct ClientConf : public CommonConf
 {
     static const int64_t Second = 2000000000LL;
 
-    static const int TcpQueueSize = 40960;   // must be multiple of 8
-    static const int TcpRecvBufSize = 40960; // must be multiple of 8
+    static const int TcpQueueSize = 10240;   // must be multiple of 8
+    static const int TcpRecvBufSize = 10240; // must be multiple of 8
 
     static const int64_t ConnectionTimeout = 10 * Second;
     static const int64_t HeartBeatInverval = 3 * Second;
@@ -21,17 +22,17 @@ struct ClientConf : public CommonConf
 class EchoClient;
 using TSClient = TcpShmClient<EchoClient, ClientConf>;
 
-class EchoClient
+class EchoClient : public TSClient
 {
 public:
     EchoClient(const std::string& ptcp_dir, const std::string& name)
-        : cli(ptcp_dir, name, this)
-        , conn(cli.getConnection()) {
+        : TSClient(ptcp_dir, name)
+        , conn(GetConnection()) {
         srand(time(NULL));
     }
 
     void Run(bool use_shm, const char* server_ipv4, uint16_t server_port) {
-        if(!cli.Connect(use_shm, server_ipv4, server_port)) return;
+        if(!Connect(use_shm, server_ipv4, server_port)) return;
         string send_num_file =
             string(conn->GetPtcpDir()) + "/" + conn->GetLocalName() + "_" + conn->GetRemoteName() + ".send_num";
         string recv_num_file =
@@ -45,34 +46,36 @@ public:
         }
         cout << "client started, send_num: " << *send_num << " recv_num: " << *recv_num << endl;
         long before = rdtsc();
-        vector<thread> threads;
         if(use_shm) {
             thread shm_thr([this]() {
+                // cpupin(6);
                 while(!conn->IsClosed()) {
                     if(PollNum()) {
                         conn->RequestClose();
                         break;
                     }
-                    cli.PollShm();
+                    PollShm();
                 }
             });
 
+            // cpupin(7);
             while(!conn->IsClosed()) {
-                cli.PollTcp(rdtsc());
+                PollTcp(rdtsc());
             }
             shm_thr.join();
         }
         else {
+            // cpupin(7);
             while(!conn->IsClosed()) {
                 if(PollNum()) {
                     conn->RequestClose();
                     break;
                 }
-                cli.PollTcp(rdtsc());
+                PollTcp(rdtsc());
             }
         }
         long latency = rdtsc() - before;
-        cli.Stop();
+        Stop();
         cout << "client stopped, send_num: " << *send_num << " recv_num: " << *recv_num << " latency: " << latency
              << endl;
     }
@@ -81,7 +84,7 @@ private:
     bool PollNum() {
         if(*send_num < MaxNum) {
             if(slow && *send_num != *recv_num) return false;
-            int tp = rand() % 4 + 1;
+            int tp = 4; // rand() % 4 + 1;
             if(tp == 1) {
                 TrySendMsg<Msg1>();
             }
@@ -144,6 +147,18 @@ private:
         return rdtsc();
     }
 
+    void OnSeqNumberMismatch(uint32_t local_ack_seq,
+                             uint32_t local_seq_start,
+                             uint32_t local_seq_end,
+                             uint32_t remote_ack_seq,
+                             uint32_t remote_seq_start,
+                             uint32_t remote_seq_end) {
+        cout << "Seq number mismatch, name: " << conn->GetRemoteName() << " ptcp file: " << conn->GetPtcpFile()
+             << " local_ack_seq: " << local_ack_seq << " local_seq_start: " << local_seq_start
+             << " local_seq_end: " << local_seq_end << " remote_ack_seq: " << remote_ack_seq
+             << " remote_seq_start: " << remote_seq_start << " remote_seq_end: " << remote_seq_end << endl;
+    }
+
     bool OnServerMsg(MsgHeader* header) {
         auto msg_type = header->msg_type;
         if(msg_type == 1) {
@@ -169,19 +184,27 @@ private:
     }
 
 private:
-    static const int MaxNum = 10000000;
-    TSClient cli;
+    static const int MaxNum = 50000000;
     TSClient::Connection* conn;
     volatile bool stopped = false;
-    bool slow = false;
+    bool slow = true;
     int* send_num;
     int* recv_num;
 };
 
-int main() {
+int main(int argc, const char** argv) {
+    if(argc != 4) {
+        cout << "usage: echo_client NAME SERVER_IP USE_SHM" << endl;
+        exit(1);
+    }
+    const char* name = argv[1];
+    const char* server_ip = argv[2];
+    bool use_shm = argv[3][0] != '0';
 
-    EchoClient client("client", "client");
-    client.Run(false, "127.0.0.1", 12345);
+    cout << "name: " << name << "  server_ip: " << server_ip << " use_shm: " << use_shm << endl;
+
+    EchoClient client(name, name);
+    client.Run(use_shm, server_ip, 12345);
 
     return 0;
 }
