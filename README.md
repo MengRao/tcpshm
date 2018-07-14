@@ -4,11 +4,11 @@ When using TCP to transfer data, sent out messages are not guaranteed to be rece
 
 And as the name implies, shared memory is also supported when communicating on the same host, and provides the same interface and behavior as TCP(so users can use the same code to handle both modes), but it's more than 20 times faster than TCP on localhost!
 
-For one connection object(internally either tcp or shm), we call Alloc()/Push() and Front()/Pop() functions for sending and receiving  application msgs, which are guaranteed to be non-blocking and have no memory copying. Check interface doc for details.
+Both sides of a connection have a name, and a pair of such names uniquely identifies a connection. If one side disconnect and changes its name and reconnect with the same remote side, the connection will be brand new and will not recover from the old connection. This can sometimes be useful, e.g: A daily trading server starts before market open and stops after market close every trading day, and every day it starts it expects the connection with its clients to be new and any unhandled msgs from yesterday are silently discarded(obsolete order requests don't make any sense in a new trading day!), so the server can set its name to be something like "Server20180714".
 
 This is a framework in that it provides a server side and client side C++ template class, which implement a typical tcp server and client and are also highly configurable and customizable. For server, the framework supports connection sharding: user predefines a set of connection groups, and have one or more threads polling these groups, and once there's a new login request user decides which group it's to be assigned to. So the framework gives the user full control over the mapping between serving threads and client connections.
 
-# Technical Features
+## Technical Features
   * No C++ source files, only C++ headers, so no library to build and link
   * No external library dependencies
   * Non-blocking(only client side Connect() blocks)
@@ -21,13 +21,13 @@ This is a framework in that it provides a server side and client side C++ templa
   * No use of mutexes
   * Yes, it's lightweight, green and efficient
   
-# Documentation
+## Documentation
   [Interface Doc](https://github.com/MengRao/tcpshm/blob/master/doc/interface.md)
   
-# Example
+## Example
   [Echo Client/Server](https://github.com/MengRao/tcpshm/tree/master/test) is a complete example.
   
-# Guide to header files:
+## Guide to header files:
 
 * **tcpshm_client.h**: The client side template class.
 
