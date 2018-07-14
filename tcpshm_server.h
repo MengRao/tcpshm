@@ -42,6 +42,8 @@ protected:
         Stop();
     }
 
+    // start the server
+    // return true if success
     bool Start(const char* listen_ipv4, uint16_t listen_port) {
         if(listenfd_ >= 0) {
             static_cast<Derived*>(this)->OnSystemError("already started", 0);
@@ -158,12 +160,10 @@ protected:
         for(int i = 0; i < grp.live_cnt; i++) {
             // it's possible that grp.conns is being swapped by Ctl thread
             // so some live conn could be missed, some closed one could be visited
-            // even some conn could be visited twice, but they're all fine
+            // even some conn could be visited twice, but those're all fine
             Connection& conn = *grp.conns[i];
             MsgHeader* head = conn.TcpFront(now);
-            if(head) {
-                static_cast<Derived*>(this)->OnClientMsg(conn, head);
-            }
+            if(head) static_cast<Derived*>(this)->OnClientMsg(conn, head);
         }
     }
 
@@ -173,9 +173,7 @@ protected:
         for(int i = 0; i < grp.live_cnt; i++) {
             Connection& conn = *grp.conns[i];
             MsgHeader* head = conn.ShmFront();
-            if(head) {
-                static_cast<Derived*>(this)->OnClientMsg(conn, head);
-            }
+            if(head) static_cast<Derived*>(this)->OnClientMsg(conn, head);
         }
     }
 

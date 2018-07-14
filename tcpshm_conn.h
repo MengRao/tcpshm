@@ -37,11 +37,14 @@ public:
         return ptcp_dir_;
     }
 
+    // allocate a msg of size in send queue
+    // return nullptr if no enough space
     MsgHeader* Alloc(uint16_t size) {
         if(shm_sendq_) return shm_sendq_->Alloc(size);
         return ptcp_conn_.Alloc(size);
     }
 
+    // submit the last msg from Alloc() and send out
     void Push() {
         if(shm_sendq_)
             shm_sendq_->Push();
@@ -49,6 +52,8 @@ public:
             ptcp_conn_.Push();
     }
 
+    // for shm, same as Push
+    // for tcp, don't send out immediately as we have more to push
     void PushMore() {
         if(shm_sendq_)
             shm_sendq_->Push();
@@ -56,11 +61,15 @@ public:
             ptcp_conn_.PushMore();
     }
 
+    // get the next msg from recv queue, return nullptr if queue is empty
+    // if caller dont call Pop() later, it will get the same msg again
+    // user dont need to call Front() directly as polling functions will do it
     MsgHeader* Front() {
         if(shm_recvq_) return shm_recvq_->Front();
         return ptcp_conn_.Front();
     }
 
+    // consume the msg we got from Front() or polling function
     void Pop() {
         if(shm_recvq_)
             shm_recvq_->Pop();

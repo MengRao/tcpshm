@@ -30,6 +30,8 @@ protected:
         Stop();
     }
 
+    // connect to server, may block for a short time
+    // return true if success
     bool Connect(bool use_shm, const char* server_ipv4, uint16_t server_port) {
         if(!conn_.IsClosed()) {
             static_cast<Derived*>(this)->OnSystemError("already connected", 0);
@@ -151,6 +153,7 @@ protected:
         return true;
     }
 
+    // we need to PollTcp even if using shm
     void PollTcp(int64_t now) {
         if(conn_.IsClosed()) return;
         MsgHeader* head = conn_.TcpFront(now);
@@ -160,18 +163,16 @@ protected:
             static_cast<Derived*>(this)->OnDisconnected(reason, sys_errno);
             return;
         }
-        if(head) {
-            static_cast<Derived*>(this)->OnServerMsg(head);
-        }
+        if(head) static_cast<Derived*>(this)->OnServerMsg(head);
     }
 
+    // only for using shm
     void PollShm() {
         MsgHeader* head = conn_.ShmFront();
-        if(head) {
-            static_cast<Derived*>(this)->OnServerMsg(head);
-        }
+        if(head) static_cast<Derived*>(this)->OnServerMsg(head);
     }
 
+    // stop the connection and close files
     void Stop() {
         if(server_name_) {
             my_munmap<ServerName>(server_name_);
@@ -180,6 +181,7 @@ protected:
         conn_.Release();
     }
 
+    // get the connection reference which can be kept by user as long as TcpShmClient is not destructed
     Connection* GetConnection() {
         return &conn_;
     }

@@ -9,6 +9,7 @@ using namespace tcpshm;
 
 struct ClientConf : public CommonConf
 {
+    // as the program is using rdtsc to measure time difference, Second is CPU frequency
     static const int64_t Second = 2000000000LL;
 
     static const int TcpQueueSize = 10240;   // must be multiple of 8
@@ -34,6 +35,7 @@ public:
 
     void Run(bool use_shm, const char* server_ipv4, uint16_t server_port) {
         if(!Connect(use_shm, server_ipv4, server_port)) return;
+        // we mmap the send and recv number to file in case of program crash
         string send_num_file =
             string(conn->GetPtcpDir()) + "/" + conn->GetLocalName() + "_" + conn->GetRemoteName() + ".send_num";
         string recv_num_file =
