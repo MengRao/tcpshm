@@ -34,7 +34,7 @@ public:
     }
 
     void Run(bool use_shm, const char* server_ipv4, uint16_t server_port) {
-        if(!Connect(use_shm, server_ipv4, server_port)) return;
+        if(!Connect(use_shm, server_ipv4, server_port, 0)) return;
         // we mmap the send and recv number to file in case of program crash
         string send_num_file =
             string(conn->GetPtcpDir()) + "/" + conn->GetLocalName() + "_" + conn->GetRemoteName() + ".send_num";
@@ -143,19 +143,14 @@ private:
     }
 
     // called within Connect()
-    // fill the user defined data in LoginMsg
-    void FillLoginUserData(ClientConf::LoginUserData* login_user_data) {
-    }
-
-    // called within Connect()
     // Login rejected by server
-    void OnLoginReject(const TSClient::LoginRspMsg* login_rsp) {
+    void OnLoginReject(const LoginRspMsg* login_rsp) {
         cout << "Login Rejected: " << login_rsp->error_msg << endl;
     }
 
     // called within Connect()
     // confirmation for login success
-    int64_t OnLoginSuccess(const TSClient::LoginRspMsg* login_rsp) {
+    int64_t OnLoginSuccess(const LoginRspMsg* login_rsp) {
         cout << "Login Success" << endl;
         return rdtsc();
     }
@@ -175,7 +170,7 @@ private:
     }
 
     // called by APP thread
-    bool OnServerMsg(MsgHeader* header) {
+    void OnServerMsg(MsgHeader* header) {
         auto msg_type = header->msg_type;
         if(msg_type == 1) {
             handleMsg((Msg1*)(header + 1));
@@ -202,7 +197,7 @@ private:
 
 private:
     static const int MaxNum = 10000000;
-    TSClient::Connection* conn;
+    Connection* conn;
     bool slow = true;
     int* send_num;
     int* recv_num;

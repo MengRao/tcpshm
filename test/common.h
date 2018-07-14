@@ -1,6 +1,6 @@
 #pragma once
 
-// confurations that must be the same between server and client
+// configurations that must be the same between server and client
 struct CommonConf
 {
     static const int NameSize = 16;

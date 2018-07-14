@@ -1,5 +1,6 @@
 #pragma once
 #include "msg_header.h"
+#include <string.h>
 
 namespace tcpshm {
 

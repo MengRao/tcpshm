@@ -30,9 +30,12 @@ protected:
         Stop();
     }
 
-    // connect to server, may block for a short time
+    // connect and login to server, may block for a short time
     // return true if success
-    bool Connect(bool use_shm, const char* server_ipv4, uint16_t server_port) {
+    bool Connect(bool use_shm,
+                 const char* server_ipv4,
+                 uint16_t server_port,
+                 const typename Conf::LoginUserData& login_user_data) {
         if(!conn_.IsClosed()) {
             static_cast<Derived*>(this)->OnSystemError("already connected", 0);
             return false;
@@ -56,6 +59,7 @@ protected:
         strncpy(login->last_server_name, server_name_, sizeof(login->last_server_name));
         login->use_shm = use_shm;
         login->client_seq_start = login->client_seq_end = 0;
+        login->user_data = login_user_data;
         if(server_name_[0] &&
            (!conn_.OpenFile(use_shm, &error_msg) ||
             !conn_.GetSeq(&sendbuf[0].ack_seq, &login->client_seq_start, &login->client_seq_end, &error_msg))) {
@@ -94,8 +98,6 @@ protected:
             close(fd);
             return false;
         }
-
-        static_cast<Derived*>(this)->FillLoginUserData(&login->user_data);
 
         int ret = send(fd, sendbuf, sizeof(sendbuf), MSG_NOSIGNAL);
         if(ret != sizeof(sendbuf)) {

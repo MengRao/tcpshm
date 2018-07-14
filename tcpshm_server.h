@@ -78,6 +78,7 @@ protected:
         return true;
     }
 
+    // poll control for handling new connections and keep shm connections alive
     void PollCtl(int64_t now) {
         // every poll we accept only one connection
         if(avail_idx_ != Conf::MaxNewConnections) {
@@ -153,6 +154,7 @@ protected:
         }
     }
 
+    // poll tcp for serving tcp connections
     void PollTcp(int64_t now, int grpid) {
         auto& grp = tcp_grps_[grpid];
         // force read grp.live_cnt from memory, it could have been changed by Ctl thread
@@ -167,6 +169,7 @@ protected:
         }
     }
 
+    // poll shm for serving shm connections
     void PollShm(int grpid) {
         auto& grp = shm_grps_[grpid];
         asm volatile("" : "=m"(grp.live_cnt) : :);

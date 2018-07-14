@@ -37,7 +37,7 @@ public:
         return ptcp_dir_;
     }
 
-    // allocate a msg of size in send queue
+    // allocate a msg of specified size in send queue
     // return nullptr if no enough space
     MsgHeader* Alloc(uint16_t size) {
         if(shm_sendq_) return shm_sendq_->Alloc(size);
