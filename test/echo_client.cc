@@ -51,7 +51,7 @@ public:
         long before = rdtsc();
         if(use_shm) {
             thread shm_thr([this]() {
-                cpupin(6);
+                // cpupin(6);
                 while(!conn->IsClosed()) {
                     if(PollNum()) {
                         conn->RequestClose();
@@ -61,14 +61,14 @@ public:
                 }
             });
 
-            cpupin(7);
+            // cpupin(7);
             while(!conn->IsClosed()) {
                 PollTcp(rdtsc());
             }
             shm_thr.join();
         }
         else {
-            cpupin(7);
+            // cpupin(7);
             while(!conn->IsClosed()) {
                 if(PollNum()) {
                     conn->RequestClose();
@@ -87,7 +87,7 @@ private:
     bool PollNum() {
         if(*send_num < MaxNum) {
             if(slow && *send_num != *recv_num) return false;
-            int tp = 4; // rand() % 4 + 1;
+            int tp = rand() % 4 + 1;
             if(tp == 1) {
                 TrySendMsg<Msg1>();
             }
@@ -184,7 +184,7 @@ private:
     }
 
 private:
-    static const int MaxNum = 50000000;
+    static const int MaxNum = 10000000;
     TSClient::Connection* conn;
     volatile bool stopped = false;
     bool slow = true;

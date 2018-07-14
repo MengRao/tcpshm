@@ -49,7 +49,7 @@ public:
         vector<thread> threads;
         for(int i = 0; i < ServerConf::MaxTcpGrps; i++) {
             threads.emplace_back([this, i]() {
-                cpupin(i);
+                // cpupin(i);
                 while(!stopped) {
                     PollTcp(rdtsc(), i);
                 }
@@ -58,14 +58,14 @@ public:
 
         for(int i = 0; i < ServerConf::MaxShmGrps; i++) {
             threads.emplace_back([this, i]() {
-                cpupin(ServerConf::MaxTcpGrps + i);
+                // cpupin(ServerConf::MaxTcpGrps + i);
                 while(!stopped) {
                     PollShm(i);
                 }
             });
         }
 
-        cpupin(ServerConf::MaxTcpGrps + ServerConf::MaxShmGrps);
+        // cpupin(ServerConf::MaxTcpGrps + ServerConf::MaxShmGrps);
 
         while(!stopped) {
             PollCtl(rdtsc());
