@@ -2,7 +2,7 @@ tcpshm
 ======
 
 ## MsgHeader and TcpShmConnection
-Every msg has a `MsgHeader` automatically appended, regardless of control msg or app msg, it's a 8 byte structrue:
+Every msg has a `MsgHeader` automatically appended, regardless of control msg or app msg, it's a 8 byte structure:
 
 ```c++
 struct MsgHeader
@@ -170,7 +170,7 @@ Also, user needs to define a collection of callback functions for framework to i
     void OnDisconnected(const char* reason, int sys_errno);
 ```
 
-## Client Side
+## Server Side
 tcpshm_server.h defines template Class `TcpShmServer`, same as `TcpShmClient`, user need to defines a new Class that derives from `TcpShmServer` and provides a configuration template class, and also a server name and ptcp folder name for TcpShmServer's constructor:
 ```c++
 #include "tcpshm/tcpshm_server.h"
