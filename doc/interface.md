@@ -51,6 +51,10 @@ If user finishes handling the msg, it should call Pop() to consume it, otherwise
     void Pop();
 ```
 
+In a typical scenario that on handling a msg, user wants to send back a response msg immediately, he should call Pop() and Push() in a row instead of the reverse, in that:
+1) for tcp, Push() will send to the network which would be slow, so if we do the reverse there's a chance that when program crashes the Pushed msg is persisted in sending queue but Pop() is not called, so on recovery it'll handle the same msg again and push a duplicate response. If we do Pop() and Push() there's still a chance that Pop() succeeds but Push() doesn't(miss sending a response), but that's only a theoretical chance, you can test the EchoServer example.  
+2) for tcp, if we call Pop() and Push(), the updated ack seq(due to Pop()) will be piggybacked by the response msg(due to Push()), which means the remote side will get the update more quickly.
+
 In application, user is not allowed to create TcpShmConnection but can get a reference to it from client or server framework, and this reference is guaranteed to be valid until server/client is stopped, this allows user to send msgs even when it's disconnected, and remote side will get it once connection is re-established. 
 Also user can attach user-defined data to TcpShmConnection: 
 ```c++
