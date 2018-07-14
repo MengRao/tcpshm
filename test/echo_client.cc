@@ -51,6 +51,7 @@ public:
         long before = rdtsc();
         if(use_shm) {
             thread shm_thr([this]() {
+                // uncommment below cpupins to get more stable latency
                 // cpupin(6);
                 while(!conn->IsClosed()) {
                     if(PollNum()) {
@@ -61,6 +62,7 @@ public:
                 }
             });
 
+            // we still need to poll tcp for heartbeats even if using shm
             // cpupin(7);
             while(!conn->IsClosed()) {
                 PollTcp(rdtsc());
@@ -86,7 +88,9 @@ public:
 private:
     bool PollNum() {
         if(*send_num < MaxNum) {
+            // for slow mode, we wait to recv an echo msg before sending the next one
             if(slow && *send_num != *recv_num) return false;
+            // we randomly send one of the 4 msgs
             int tp = rand() % 4 + 1;
             if(tp == 1) {
                 TrySendMsg<Msg1>();
@@ -102,6 +106,7 @@ private:
             }
         }
         else {
+            // if all echo msgs are got, we are done
             if(*send_num == *recv_num) return true;
         }
         return false;
@@ -131,22 +136,32 @@ private:
 
 private:
     friend TSClient;
+    // called within Connect()
+    // reporting errors on connecting to the server
     void OnSystemError(const char* error_msg, int sys_errno) {
         cout << "System Error: " << error_msg << " syserrno: " << strerror(sys_errno) << endl;
     }
 
+    // called within Connect()
+    // fill the user defined data in LoginMsg
     void FillLoginUserData(ClientConf::LoginUserData* login_user_data) {
     }
 
+    // called within Connect()
+    // Login rejected by server
     void OnLoginReject(const TSClient::LoginRspMsg* login_rsp) {
         cout << "Login Rejected: " << login_rsp->error_msg << endl;
     }
 
+    // called within Connect()
+    // confirmation for login success
     int64_t OnLoginSuccess(const TSClient::LoginRspMsg* login_rsp) {
         cout << "Login Success" << endl;
         return rdtsc();
     }
 
+    // called within Connect()
+    // server and client ptcp sequence number don't match, we need to fix it manually
     void OnSeqNumberMismatch(uint32_t local_ack_seq,
                              uint32_t local_seq_start,
                              uint32_t local_seq_end,
@@ -159,6 +174,7 @@ private:
              << " remote_seq_start: " << remote_seq_start << " remote_seq_end: " << remote_seq_end << endl;
     }
 
+    // called by APP thread
     bool OnServerMsg(MsgHeader* header) {
         auto msg_type = header->msg_type;
         if(msg_type == 1) {
@@ -179,6 +195,7 @@ private:
         conn->Pop();
     }
 
+    // called by tcp thread
     void OnDisconnected(const char* reason, int sys_errno) {
         cout << "Client disconnected reason: " << reason << " syserrno: " << strerror(sys_errno) << endl;
     }
@@ -186,7 +203,6 @@ private:
 private:
     static const int MaxNum = 10000000;
     TSClient::Connection* conn;
-    volatile bool stopped = false;
     bool slow = true;
     int* send_num;
     int* recv_num;
@@ -194,14 +210,12 @@ private:
 
 int main(int argc, const char** argv) {
     if(argc != 4) {
-        cout << "usage: echo_client NAME SERVER_IP USE_SHM" << endl;
+        cout << "usage: echo_client NAME SERVER_IP USE_SHM[0|1]" << endl;
         exit(1);
     }
     const char* name = argv[1];
     const char* server_ip = argv[2];
     bool use_shm = argv[3][0] != '0';
-
-    cout << "name: " << name << "  server_ip: " << server_ip << " use_shm: " << use_shm << endl;
 
     EchoClient client(name, name);
     client.Run(use_shm, server_ip, 12345);

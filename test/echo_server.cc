@@ -10,6 +10,7 @@ using namespace tcpshm;
 
 struct ServerConf : public CommonConf
 {
+    // as the program is using rdtsc to measure time difference, Second is CPU frequency
     static const int64_t Second = 2000000000LL;
 
     static const int MaxNewConnections = 5;
@@ -47,8 +48,10 @@ public:
     void Run(const char* listen_ipv4, uint16_t listen_port) {
         if(!Start(listen_ipv4, listen_port)) return;
         vector<thread> threads;
+        // create threads for polling tcp
         for(int i = 0; i < ServerConf::MaxTcpGrps; i++) {
             threads.emplace_back([this, i]() {
+                // uncommment below cpupins to get more stable latency
                 // cpupin(i);
                 while(!stopped) {
                     PollTcp(rdtsc(), i);
@@ -56,6 +59,7 @@ public:
             });
         }
 
+        // create threads for polling shm
         for(int i = 0; i < ServerConf::MaxShmGrps; i++) {
             threads.emplace_back([this, i]() {
                 // cpupin(ServerConf::MaxTcpGrps + i);
@@ -67,6 +71,7 @@ public:
 
         // cpupin(ServerConf::MaxTcpGrps + ServerConf::MaxShmGrps);
 
+        // polling control using this thread
         while(!stopped) {
             PollCtl(rdtsc());
         }
@@ -81,15 +86,21 @@ public:
 private:
     friend TSServer;
 
+    // called with Start()
+    // reporting errors on Starting the server
     void OnSystemError(const char* errno_msg, int sys_errno) {
         cout << "System Error: " << errno_msg << " syserrno: " << strerror(sys_errno) << endl;
     }
 
-    // if accept, set user_data in login_rsp, and return grpid with respect to tcp or shm
+    // called by CTL thread
+    // if accept the connection, set user_data in login_rsp and return grpid with respect to tcp or shm
     // else set error_msg in login_rsp if possible, and return -1
+    // Note that even if we accept it here, there could be other errors on handling the login,
+    // so we have to wait OnClientLogon for confirmation
     int OnNewConnection(const struct sockaddr_in& addr, const LoginMsg* login, LoginRspMsg* login_rsp) {
         cout << "New Connection from: " << inet_ntoa(addr.sin_addr) << ":" << ntohs(addr.sin_port)
              << ", name: " << login->client_name << ", use_shm: " << (bool)login->use_shm << endl;
+        // here we simply hash client name and uniformly map to each group
         auto hh = hash<string>{}(string(login->client_name));
         if(login->use_shm) {
             if(ServerConf::MaxShmGrps > 0) {
@@ -111,21 +122,15 @@ private:
         }
     }
 
-    void OnClientLogon(const struct sockaddr_in& addr, Connection& conn) {
-        cout << "Client Logon from: " << inet_ntoa(addr.sin_addr) << ":" << ntohs(addr.sin_port)
-             << ", name: " << conn.GetRemoteName() << endl;
-    }
-
-    void OnClientDisconnected(Connection& conn, const char* reason, int sys_errno) {
-        cout << "Client disconnected,.name: " << conn.GetRemoteName() << " reason: " << reason
-             << " syserrno: " << strerror(sys_errno) << endl;
-    }
-
+    // called by CTL thread
+    // ptcp or shm files can't be open or are corrupt
     void OnClientFileError(Connection& conn, const char* reason, int sys_errno) {
         cout << "Client file errno, name: " << conn.GetRemoteName() << " reason: " << reason
              << " syserrno: " << strerror(sys_errno) << endl;
     }
 
+    // called by CTL thread
+    // server and client ptcp sequence number don't match, we need to fix it manually
     void OnSeqNumberMismatch(Connection& conn,
                              uint32_t local_ack_seq,
                              uint32_t local_seq_start,
@@ -139,6 +144,21 @@ private:
              << " remote_seq_start: " << remote_seq_start << " remote_seq_end: " << remote_seq_end << endl;
     }
 
+    // called by CTL thread
+    // confirmation for client logon
+    void OnClientLogon(const struct sockaddr_in& addr, Connection& conn) {
+        cout << "Client Logon from: " << inet_ntoa(addr.sin_addr) << ":" << ntohs(addr.sin_port)
+             << ", name: " << conn.GetRemoteName() << endl;
+    }
+
+    // called by CTL thread
+    // client is disconnected
+    void OnClientDisconnected(Connection& conn, const char* reason, int sys_errno) {
+        cout << "Client disconnected,.name: " << conn.GetRemoteName() << " reason: " << reason
+             << " syserrno: " << strerror(sys_errno) << endl;
+    }
+
+    // called by APP thread
     void OnClientMsg(Connection& conn, MsgHeader* recv_header) {
         auto size = recv_header->size - sizeof(MsgHeader);
         MsgHeader* send_header = conn.Alloc(size);
