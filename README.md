@@ -19,7 +19,7 @@ This is a framework in that it provides a server side and client side C++ templa
   * No dynamic memory allocation(only used a few std::string)
   * No writing to stdout or stderror
   * No use of mutexes
-  * Yes, it's lightweight, green and efficient
+  * Yes, it's lightweight, clean and efficient
   
 ## Documentation
   [Interface Doc](https://github.com/MengRao/tcpshm/blob/master/doc/interface.md)
