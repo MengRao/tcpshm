@@ -93,14 +93,14 @@ private:
     }
 
     // called by CTL thread
-    // if accept the connection, set user_data in login_rsp and return grpid with respect to tcp or shm
+    // if accept the connection, set user_data in login_rsp and return grpid(start from 0) with respect to tcp or shm
     // else set error_msg in login_rsp if possible, and return -1
     // Note that even if we accept it here, there could be other errors on handling the login,
     // so we have to wait OnClientLogon for confirmation
     int OnNewConnection(const struct sockaddr_in& addr, const LoginMsg* login, LoginRspMsg* login_rsp) {
         cout << "New Connection from: " << inet_ntoa(addr.sin_addr) << ":" << ntohs(addr.sin_port)
              << ", name: " << login->client_name << ", use_shm: " << (bool)login->use_shm << endl;
-        // here we simply hash client name and uniformly map to each group
+        // here we simply hash client name to uniformly map to each group
         auto hh = hash<string>{}(string(login->client_name));
         if(login->use_shm) {
             if(ServerConf::MaxShmGrps > 0) {
@@ -165,6 +165,7 @@ private:
         if(!send_header) return;
         send_header->msg_type = recv_header->msg_type;
         memcpy(send_header + 1, recv_header + 1, size);
+        // if we call Push() before Pop(), there's a good chance Pop() is not called in case of program crash
         conn.Pop();
         conn.Push();
     }

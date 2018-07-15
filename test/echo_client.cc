@@ -37,9 +37,9 @@ public:
         if(!Connect(use_shm, server_ipv4, server_port, 0)) return;
         // we mmap the send and recv number to file in case of program crash
         string send_num_file =
-            string(conn->GetPtcpDir()) + "/" + conn->GetLocalName() + "_" + conn->GetRemoteName() + ".send_num";
+            string(conn.GetPtcpDir()) + "/" + conn.GetLocalName() + "_" + conn.GetRemoteName() + ".send_num";
         string recv_num_file =
-            string(conn->GetPtcpDir()) + "/" + conn->GetLocalName() + "_" + conn->GetRemoteName() + ".recv_num";
+            string(conn.GetPtcpDir()) + "/" + conn.GetLocalName() + "_" + conn.GetRemoteName() + ".recv_num";
         const char* error_msg;
         send_num = my_mmap<int>(send_num_file.c_str(), false, &error_msg);
         recv_num = my_mmap<int>(recv_num_file.c_str(), false, &error_msg);
@@ -53,9 +53,9 @@ public:
             thread shm_thr([this]() {
                 // uncommment below cpupins to get more stable latency
                 // cpupin(6);
-                while(!conn->IsClosed()) {
+                while(!conn.IsClosed()) {
                     if(PollNum()) {
-                        conn->RequestClose();
+                        conn.RequestClose();
                         break;
                     }
                     PollShm();
@@ -64,16 +64,16 @@ public:
 
             // we still need to poll tcp for heartbeats even if using shm
             // cpupin(7);
-            while(!conn->IsClosed()) {
+            while(!conn.IsClosed()) {
                 PollTcp(rdtsc());
             }
             shm_thr.join();
         }
         else {
             // cpupin(7);
-            while(!conn->IsClosed()) {
+            while(!conn.IsClosed()) {
                 if(PollNum()) {
-                    conn->RequestClose();
+                    conn.RequestClose();
                     break;
                 }
                 PollTcp(rdtsc());
@@ -114,12 +114,12 @@ private:
 
     template<class T>
     bool TrySendMsg() {
-        MsgHeader* header = conn->Alloc(sizeof(T));
+        MsgHeader* header = conn.Alloc(sizeof(T));
         if(!header) return false;
         header->msg_type = T::msg_type;
         T* msg = (T*)(header + 1);
         for(auto& v : msg->val) v = (*send_num)++;
-        conn->Push();
+        conn.Push();
         return true;
     }
 
@@ -163,7 +163,7 @@ private:
                              uint32_t remote_ack_seq,
                              uint32_t remote_seq_start,
                              uint32_t remote_seq_end) {
-        cout << "Seq number mismatch, name: " << conn->GetRemoteName() << " ptcp file: " << conn->GetPtcpFile()
+        cout << "Seq number mismatch, name: " << conn.GetRemoteName() << " ptcp file: " << conn.GetPtcpFile()
              << " local_ack_seq: " << local_ack_seq << " local_seq_start: " << local_seq_start
              << " local_seq_end: " << local_seq_end << " remote_ack_seq: " << remote_ack_seq
              << " remote_seq_start: " << remote_seq_start << " remote_seq_end: " << remote_seq_end << endl;
@@ -187,7 +187,7 @@ private:
         else {
             assert(false);
         }
-        conn->Pop();
+        conn.Pop();
     }
 
     // called by tcp thread
@@ -197,7 +197,8 @@ private:
 
 private:
     static const int MaxNum = 10000000;
-    Connection* conn;
+    Connection& conn;
+    // set slow to false to send msgs as fast as it can
     bool slow = true;
     int* send_num;
     int* recv_num;

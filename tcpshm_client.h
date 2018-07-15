@@ -184,8 +184,8 @@ protected:
     }
 
     // get the connection reference which can be kept by user as long as TcpShmClient is not destructed
-    Connection* GetConnection() {
-        return &conn_;
+    Connection& GetConnection() {
+        return conn_;
     }
 
 private:

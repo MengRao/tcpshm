@@ -117,7 +117,7 @@ If Login successful, user can get the Connection reference to send msgs:
 
 ```c++
     // get the connection reference which can be kept by user as long as TcpShmClient is not destructed
-    Connection* GetConnection();
+    Connection& GetConnection();
 ```
 
 For receiving msgs and keeping the connection alive, user needs to frequenctly poll the client. For tcp mode user calls PollTcp(); For shm mode user calls both PollTcp() and PollShm(), from the same or different thread, using seperate thread has the advantage that app msg latency will be lower.

@@ -20,6 +20,7 @@ struct LoginMsgTpl
     char use_shm;
     uint32_t client_seq_start;
     uint32_t client_seq_end;
+    // user can put more information in user_data for auth, such as username, password...
     typename Conf::LoginUserData user_data;
 };
 
