@@ -1,7 +1,7 @@
 Echo Client/Server
 ==================
 
-This is a pair of example programs for demonstrating and testing the TCPSHM framework. Echo client connects to echo server, and send a sequence of increasing numbers through different types of msgs, and the echo server just respond with the same msg and send back to the client. The client also checks if the received numbers are in a increasing sequence, and if all the numbers(up to some maximum) have been sent and received, it's done.
+This is a pair of example programs for demonstrating and testing the TCPSHM framework. An echo client connects to the echo server and sends a sequence of increasing numbers through different types of msgs. The echo server just responds with the same msg and send back to the client. The client also checks if the received numbers are in a increasing sequence, and if all the numbers(up to some maximum) have been sent and received, it's done.
 
 We can choose between tcp or shm modes, and use multiple clients from different locations concurrently connecting to the same server, and freely kill the clients or the server and restart them and see what happens.
 
