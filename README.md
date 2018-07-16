@@ -1,4 +1,4 @@
-**TCPSHM is a recoverable message communication framework based on TCP or shared memory IPC for Linux**
+**TCPSHM is a connection-oriented persistent message queue framework based on TCP or SHM IPC on Linux**
 
 When using TCP to transfer data, sent out messages are not guaranteed to be received and handled by the receiver, and even worse, we often get unexpected disconnections due to either network issues or program crash, so efforts are being made on recovery procedure to ensure both sides are synced. TCPSHM provides a reliable and efficient solution based on sequence number and acknowledge mechanism that every sent out msg is persisted in a send queue until we got ack that it's been consumed by the remote side, so that disconnects/crashes are tolerated and the recovery process is purely automatic.
 
