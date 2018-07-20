@@ -11,12 +11,12 @@ This is a framework in that it provides a server side and client side C++ templa
 ## Technical Features
   * No C++ source files, only C++ headers, so no library to build and link
   * No external library dependencies
-  * Non-blocking(only client side Connect() blocks)
+  * Non-blocking(except client side Connect())
   * No creating threads internally
   * No getting any kind of timestamp from system
   * No C++ execptions
   * No C++ virtual functions
-  * No dynamic memory allocation(only used a few std::string)
+  * No dynamic memory allocation(except a few std::string)
   * No writing to stdout or stderror
   * No use of mutexes
   * Yes, it's lightweight, clean and efficient
