@@ -17,7 +17,8 @@ public:
         return ptcp_conn_.IsClosed();
     }
 
-    void RequestClose() {
+    // Close this connection
+    void Close() {
         ptcp_conn_.RequestClose();
     }
 
@@ -38,6 +39,7 @@ public:
     }
 
     // allocate a msg of specified size in send queue
+    // the returned address is guaranteed to be 8 byte aligned
     // return nullptr if no enough space
     MsgHeader* Alloc(uint16_t size) {
         if(shm_sendq_) return shm_sendq_->Alloc(size);
@@ -62,6 +64,7 @@ public:
     }
 
     // get the next msg from recv queue, return nullptr if queue is empty
+    // the returned address is guaranteed to be 8 byte aligned
     // if caller dont call Pop() later, it will get the same msg again
     // user dont need to call Front() directly as polling functions will do it
     MsgHeader* Front() {

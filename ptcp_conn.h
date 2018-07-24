@@ -217,6 +217,11 @@ public:
         Close("Request close", 0);
     }
 
+    bool UseShm() {
+        return q_ == nullptr;
+    }
+
+private:
     void Close(const char* reason, int sys_errno) {
         if(sockfd_ < 0) return;
         ::close(sockfd_);
@@ -225,11 +230,6 @@ public:
         close_errno_ = sys_errno;
     }
 
-    bool UseShm() {
-        return q_ == nullptr;
-    }
-
-private:
     int DoRecv(int len) {
         if(len == 0) return 0;
         int ret = ::recv(sockfd_, recvbuf_ + writeidx_, len, 0);
