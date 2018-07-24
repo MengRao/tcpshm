@@ -25,6 +25,7 @@ This is a framework in that it provides a server side and client side C++ templa
   * It won't persist data on disk, so it can't recover from power down
   * As it's non-blocking and busy waiting for the purpose of low latency, CPU usage would be high and a large number of live connections would downgrade the performance(say, more than 1000).
   * Transaction is not supported. So if you have multiple Push or Pop actions in a batch, be prepared that some succeed and some fail in case of program crash.
+  * Client and server must have the same endianness, this limitation could be removed in the future.
   
 ## Documentation
   [Interface Doc](https://github.com/MengRao/tcpshm/blob/master/doc/interface.md)
