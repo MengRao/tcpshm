@@ -17,7 +17,8 @@ struct MsgHeader
 };
 ```
 
-TcpShmConnection is a general connection class we can use to send or recv msgs.
+TcpShmConnection is a general connection class that we can use to send or recv msgs.
+**Note that user should use the same thread to recv or send msgs on one connection.**
 For sending, user calls Alloc() to allocate space to save a msg:
 
 ```c++
@@ -68,8 +69,6 @@ Also user can attach user-defined data to TcpShmConnection:
 ```c++
     typename Conf::ConnectionUserData user_data;
 ```
-
-Note that TcpShmConnection is not thread safe. E.g. if user were to send msg from multiple threads, he has to use some kind of lock himself to protect Alloc()/Push() paired calls.
 
 
 ## Client Side
