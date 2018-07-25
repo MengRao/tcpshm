@@ -2,7 +2,7 @@ tcpshm
 ======
 
 ## MsgHeader and TcpShmConnection
-Every msg has a `MsgHeader` automatically appended, regardless of control msg or app msg, it's a 8 byte structure:
+Every msg has a `MsgHeader` automatically appended, regardless of control msg or app msg, it's a 8 byte structure in host endian:
 
 ```c++
 struct MsgHeader
@@ -16,6 +16,7 @@ struct MsgHeader
     uint32_t ack_seq;
 };
 ```
+The framework will apply endian conversion on MsgHeader automatically(check ToLittleEndian below) if sending over tcp channel.
 
 TcpShmConnection is a general connection class that we can use to send or recv msgs.
 **Note that user should use the same thread to recv or send msgs on one connection.**
@@ -28,7 +29,7 @@ For sending, user calls Alloc() to allocate space to save a msg:
     MsgHeader* Alloc(uint16_t size);
 ```
 
-In the returned `MsgHeader` pointer, user need to set msg_type field and the msg content after the header, then call Push() to submit and send out the msg.
+In the returned `MsgHeader` pointer, user need to set msg_type field and the msg content(it's user's responsibility to take care of the endian for msg content) after the header, then call Push() to submit and send out the msg.
 If user have multiple msgs to send in a row, it's better to use PushMore() for first several msgs and Push() for the last one:
 ```c++
     // submit the last msg from Alloc() and send out
@@ -84,6 +85,8 @@ struct Conf
     // shm queue size, must be power of 2
     static const int ShmQueueSize = 2048; 
     // tcp send queue size, must be multiple of 8
+    // set to the endian of majority of the hosts, e.g. true for x86
+    static const bool ToLittleEndian = true; 
     static const int TcpQueueSize = 10240;   
     // tcp recv buff size, must be multiple of 8
     static const int TcpRecvBufSize = 10240; 
@@ -192,6 +195,8 @@ struct Conf
     static const int NameSize = 16;
     // shm queue size, must be power of 2
     static const int ShmQueueSize = 2048; // must be power of 2
+    // set to the endian of majority of the hosts, e.g. true for x86
+    static const bool ToLittleEndian = true; 
     // max number of unlogined tcp connection
     static const int MaxNewConnections = 5;
     // max number of shm connection per group
@@ -214,9 +219,9 @@ struct Conf
     // delay of heartbeat msg after the last tcp msg send time, measured in user provided timestamp
     static const int64_t HeartBeatInverval = 3;
 
-    // user defined data in LoginMsg
+    // user defined data in LoginMsg, take care of the endian
     using LoginUserData = char;
-    // user defined data in LoginRspMsg
+    // user defined data in LoginRspMsg, take care of the endian
     using LoginRspUserData = char;
     // user defined data in TcpShmConnection class
     using ConnectionUserData = char;

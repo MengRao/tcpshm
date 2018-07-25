@@ -103,15 +103,19 @@ protected:
             if(ret < 0 && errno == EAGAIN && now - conn.time <= Conf::NewConnectionTimeout) {
                 continue;
             }
-            if(ret == sizeof(conn.recvbuf) && conn.recvbuf[0].size == sizeof(MsgHeader) + sizeof(LoginMsg) &&
-               conn.recvbuf[0].msg_type == LoginMsg::msg_type) {
-                // looks like a valid login msg
-                LoginMsg* login = (LoginMsg*)(conn.recvbuf + 1);
-                if(login->use_shm) {
-                    HandleLogin(now, conn, shm_grps_);
-                }
-                else {
-                    HandleLogin(now, conn, tcp_grps_);
+            if(ret == sizeof(conn.recvbuf)) {
+                conn.recvbuf[0].template ConvertByteOrder<Conf::ToLittleEndian>();
+                if(conn.recvbuf[0].size == sizeof(MsgHeader) + sizeof(LoginMsg) &&
+                   conn.recvbuf[0].msg_type == LoginMsg::msg_type) {
+                    // looks like a valid login msg
+                    LoginMsg* login = (LoginMsg*)(conn.recvbuf + 1);
+                    login->ConvertByteOrder();
+                    if(login->use_shm) {
+                        HandleLogin(now, conn, shm_grps_);
+                    }
+                    else {
+                        HandleLogin(now, conn, tcp_grps_);
+                    }
                 }
             }
 
@@ -228,6 +232,7 @@ private:
         MsgHeader sendbuf[1 + (sizeof(LoginRspMsg) + 7) / 8];
         sendbuf[0].size = sizeof(MsgHeader) + sizeof(LoginRspMsg);
         sendbuf[0].msg_type = LoginRspMsg::msg_type;
+        sendbuf[0].template ConvertByteOrder<Conf::ToLittleEndian>();
         LoginRspMsg* login_rsp = (LoginRspMsg*)(sendbuf + 1);
         strncpy(login_rsp->server_name, server_name_, sizeof(login_rsp->server_name));
         login_rsp->status = 2;
@@ -293,9 +298,10 @@ private:
                     return;
                 }
             }
-            sendbuf[0].ack_seq = local_ack_seq;
+            sendbuf[0].ack_seq = Endian<Conf::ToLittleEndian>::Convert(local_ack_seq);
             login_rsp->server_seq_start = local_seq_start;
             login_rsp->server_seq_end = local_seq_end;
+            login_rsp->ConvertByteOrder();
             if(!CheckAckInQueue(remote_ack_seq, local_seq_start, local_seq_end) ||
                !CheckAckInQueue(local_ack_seq, remote_seq_start, remote_seq_end)) {
                 static_cast<Derived*>(this)->OnSeqNumberMismatch(curconn,

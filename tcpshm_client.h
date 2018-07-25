@@ -99,6 +99,8 @@ protected:
             return false;
         }
 
+        sendbuf[0].template ConvertByteOrder<Conf::ToLittleEndian>();
+        login->ConvertByteOrder();
         int ret = send(fd, sendbuf, sizeof(sendbuf), MSG_NOSIGNAL);
         if(ret != sizeof(sendbuf)) {
             static_cast<Derived*>(this)->OnSystemError("send", ret < 0 ? errno : 0);
@@ -114,6 +116,8 @@ protected:
             return false;
         }
         LoginRspMsg* login_rsp = (LoginRspMsg*)(recvbuf + 1);
+        recvbuf[0].template ConvertByteOrder<Conf::ToLittleEndian>();
+        login_rsp->ConvertByteOrder();
         if(recvbuf[0].size != sizeof(MsgHeader) + sizeof(LoginRspMsg) || recvbuf[0].msg_type != LoginRspMsg::msg_type ||
            login_rsp->server_name[0] == 0) {
             static_cast<Derived*>(this)->OnSystemError("Invalid LoginRsp", 0);
@@ -122,6 +126,8 @@ protected:
         }
         if(login_rsp->status != 0) {
             if(login_rsp->status == 1) { // seq number mismatch
+                sendbuf[0].template ConvertByteOrder<Conf::ToLittleEndian>();
+                login->ConvertByteOrder();
                 static_cast<Derived*>(this)->OnSeqNumberMismatch(sendbuf[0].ack_seq,
                                                                  login->client_seq_start,
                                                                  login->client_seq_end,

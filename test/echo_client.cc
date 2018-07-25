@@ -52,7 +52,7 @@ public:
         if(use_shm) {
             thread shm_thr([this]() {
                 // uncommment below cpupins to get more stable latency
-                cpupin(6);
+                // cpupin(6);
                 while(!conn.IsClosed()) {
                     if(PollNum()) {
                         conn.Close();
@@ -63,14 +63,14 @@ public:
             });
 
             // we still need to poll tcp for heartbeats even if using shm
-            cpupin(7);
+            // cpupin(7);
             while(!conn.IsClosed()) {
                 PollTcp(rdtsc());
             }
             shm_thr.join();
         }
         else {
-            cpupin(7);
+            // cpupin(7);
             while(!conn.IsClosed()) {
                 if(PollNum()) {
                     conn.Close();
@@ -91,7 +91,7 @@ private:
             // for slow mode, we wait to recv an echo msg before sending the next one
             if(slow && *send_num != *recv_num) return false;
             // we randomly send one of the 4 msgs
-            int tp = 1; // rand() % 4 + 1;
+            int tp = rand() % 4 + 1;
             if(tp == 1) {
                 TrySendMsg<Msg1>();
             }
@@ -118,7 +118,11 @@ private:
         if(!header) return false;
         header->msg_type = T::msg_type;
         T* msg = (T*)(header + 1);
-        for(auto& v : msg->val) v = (*send_num)++;
+        for(auto& v : msg->val) {
+            // convert to configurated network byte order. Don't need to do this if you know server is using the same
+            // endian
+            v = Endian<ClientConf::ToLittleEndian>::Convert((*send_num)++);
+        }
         conn.Push();
         return true;
     }
@@ -126,6 +130,8 @@ private:
     template<class T>
     void handleMsg(T* msg) {
         for(auto v : msg->val) {
+            // convert from configurated network byte order
+            Endian<ClientConf::ToLittleEndian>::ConvertInPlace(v);
             if(v != *recv_num) {
                 cout << "bad: v: " << v << " recv_num: " << (*recv_num) << endl;
                 exit(1);
@@ -196,7 +202,7 @@ private:
     }
 
 private:
-    static const int MaxNum = 4000000;
+    static const int MaxNum = 10000000;
     Connection& conn;
     // set slow to false to send msgs as fast as it can
     bool slow = true;

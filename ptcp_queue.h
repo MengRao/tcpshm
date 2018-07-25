@@ -5,7 +5,7 @@
 namespace tcpshm {
 
 // Simple single thread persist Queue that can be mmap-ed to a file
-template<uint32_t Bytes>
+template<uint32_t Bytes, bool ToLittleEndian>
 class PTCPQueue
 {
 public:
@@ -32,6 +32,7 @@ public:
         MsgHeader& header = blk_[write_idx_];
         uint32_t blk_sz = (header.size + sizeof(MsgHeader) - 1) / sizeof(MsgHeader);
         header.ack_seq = ack_seq_num_;
+        header.ConvertByteOrder<ToLittleEndian>();
         write_idx_ += blk_sz;
     }
 
@@ -55,7 +56,8 @@ public:
         // we assume that a successfuly logined client will not attack us
         // so_seq will never go beyond the msg write_idx_ points to during a connection lifecycle
         do {
-            read_idx_ += (blk_[read_idx_].size + sizeof(MsgHeader) - 1) / sizeof(MsgHeader);
+            read_idx_ +=
+                (Endian<ToLittleEndian>::Convert(blk_[read_idx_].size) + sizeof(MsgHeader) - 1) / sizeof(MsgHeader);
             read_seq_num_++;
         } while(read_seq_num_ != ack_seq);
         if(read_idx_ == write_idx_) {
@@ -71,8 +73,10 @@ public:
         uint32_t end = read_seq_num_;
         uint32_t idx = read_idx_;
         while(idx < write_idx_) {
-            if((int)(ack_seq_num_ - blk_[idx].ack_seq) < 0) return false; // ack_seq in this msg is too new
-            idx += (blk_[idx].size + sizeof(MsgHeader) - 1) / sizeof(MsgHeader);
+            MsgHeader header = blk_[idx];
+            header.ConvertByteOrder<ToLittleEndian>();
+            if((int)(ack_seq_num_ - header.ack_seq) < 0) return false; // ack_seq in this msg is too new
+            idx += (header.size + sizeof(MsgHeader) - 1) / sizeof(MsgHeader);
             end++;
         }
         if(idx != write_idx_) return false;

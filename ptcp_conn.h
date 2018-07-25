@@ -15,25 +15,41 @@ template<class Conf>
 struct LoginMsgTpl
 {
     static const uint16_t msg_type = 1;
-    char client_name[Conf::NameSize];
-    char last_server_name[Conf::NameSize];
-    char use_shm;
     uint32_t client_seq_start;
     uint32_t client_seq_end;
     // user can put more information in user_data for auth, such as username, password...
     typename Conf::LoginUserData user_data;
+
+    // below are all char types, no alignment requirement
+    char use_shm;
+    char client_name[Conf::NameSize];
+    char last_server_name[Conf::NameSize];
+
+    void ConvertByteOrder() {
+        Endian<Conf::ToLittleEndian> ed;
+        ed.ConvertInPlace(client_seq_start);
+        ed.ConvertInPlace(client_seq_end);
+    }
 };
 
 template<class Conf>
 struct LoginRspMsgTpl
 {
     static const uint16_t msg_type = 2;
-    char server_name[Conf::NameSize];
-    int status;         // 0: OK, 1: seqnum mismatch, 2: other error
-    char error_msg[32]; // empty error_msg means success
     uint32_t server_seq_start;
     uint32_t server_seq_end;
     typename Conf::LoginRspUserData user_data;
+
+    // below are all char types, no alignment requirement
+    char status; // 0: OK, 1: seqnum mismatch, 2: other error
+    char server_name[Conf::NameSize];
+    char error_msg[32]; // empty error_msg means success
+
+    void ConvertByteOrder() {
+        Endian<Conf::ToLittleEndian> ed;
+        ed.ConvertInPlace(server_seq_start);
+        ed.ConvertInPlace(server_seq_end);
+    }
 };
 
 // Single thread class except RequestClose()
@@ -45,6 +61,7 @@ public:
         hbmsg_.size = sizeof(MsgHeader);
         hbmsg_.msg_type = HeartbeatMsg::msg_type;
         hbmsg_.ack_seq = 0;
+        hbmsg_.ConvertByteOrder<Conf::ToLittleEndian>();
     }
 
     bool OpenFile(const char* ptcp_queue_file,
@@ -129,9 +146,13 @@ public:
         }
 
         if(int len = DoRecv(Conf::TcpRecvBufSize - writeidx_)) {
+            int old_writeidx = writeidx_;
             writeidx_ += len;
             while(writeidx_ - nextmsg_idx_ >= 8) {
                 MsgHeader* header = (MsgHeader*)(recvbuf_ + nextmsg_idx_);
+                if(old_writeidx - nextmsg_idx_ < 8) { // we haven't converted this header
+                    header->ConvertByteOrder<Conf::ToLittleEndian>();
+                }
                 q_->Ack(header->ack_seq);
                 int msg_size = (header->size + 7) & -8;
                 if(msg_size > Conf::TcpRecvBufSize) {
@@ -165,7 +186,7 @@ public:
         if(now_ - send_time_ < Conf::HeartBeatInverval) return;
         if(q_) {
             if(SendPending()) return;
-            hbmsg_.ack_seq = q_->MyAck();
+            hbmsg_.ack_seq = Endian<Conf::ToLittleEndian>::Convert(q_->MyAck());
         }
         int sent = ::send(sockfd_, &hbmsg_, sizeof(hbmsg_), MSG_NOSIGNAL);
         if(sent < 0 && errno == EAGAIN) return;
@@ -254,7 +275,7 @@ private:
     }
 
 private:
-    typedef PTCPQueue<Conf::TcpQueueSize> PTCPQ;
+    typedef PTCPQueue<Conf::TcpQueueSize, Conf::ToLittleEndian> PTCPQ;
     PTCPQ* q_ = nullptr; // may be mmaped to file
     int sockfd_ = -1;
     const char* close_reason_ = "nil";
