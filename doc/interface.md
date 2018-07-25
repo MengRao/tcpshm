@@ -84,9 +84,9 @@ struct Conf
     static const int NameSize = 16; 
     // shm queue size, must be power of 2
     static const int ShmQueueSize = 2048; 
-    // tcp send queue size, must be multiple of 8
     // set to the endian of majority of the hosts, e.g. true for x86
     static const bool ToLittleEndian = true; 
+    // tcp send queue size, must be multiple of 8
     static const int TcpQueueSize = 10240;   
     // tcp recv buff size, must be multiple of 8
     static const int TcpRecvBufSize = 10240; 
