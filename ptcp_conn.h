@@ -11,6 +11,8 @@ struct HeartbeatMsg
     static const uint16_t msg_type = 0;
 };
 
+// Note that we allow user to reuse msg_type 1 and 2
+// Because LoginMsg and LoginRspMsg are expected only at the beginning of a connection
 template<class Conf>
 struct LoginMsgTpl
 {
