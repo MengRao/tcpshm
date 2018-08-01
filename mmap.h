@@ -5,6 +5,8 @@
 #include <unistd.h>
 #include <fcntl.h>
 
+namespace tcpshm {
+
 template<class T>
 T* my_mmap(const char* filename, bool use_shm, const char** error_msg) {
     int fd = -1;
@@ -36,3 +38,4 @@ template<class T>
 void my_munmap(void* addr) {
     munmap(addr, sizeof(T));
 }
+} // namespace tcpshm
