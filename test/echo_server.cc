@@ -51,8 +51,7 @@ public:
         // create threads for polling tcp
         for(int i = 0; i < ServerConf::MaxTcpGrps; i++) {
             threads.emplace_back([this, i]() {
-                // uncommment below cpupins to get more stable latency
-                // cpupin(i);
+                if(do_cpupin) cpupin(i);
                 while(!stopped) {
                     PollTcp(rdtsc(), i);
                 }
@@ -62,14 +61,14 @@ public:
         // create threads for polling shm
         for(int i = 0; i < ServerConf::MaxShmGrps; i++) {
             threads.emplace_back([this, i]() {
-                // cpupin(ServerConf::MaxTcpGrps + i);
+                if(do_cpupin) cpupin(ServerConf::MaxTcpGrps + i);
                 while(!stopped) {
                     PollShm(i);
                 }
             });
         }
 
-        // cpupin(ServerConf::MaxTcpGrps + ServerConf::MaxShmGrps);
+        if(do_cpupin) cpupin(ServerConf::MaxTcpGrps + ServerConf::MaxShmGrps);
 
         // polling control using this thread
         while(!stopped) {
@@ -171,6 +170,8 @@ private:
     }
 
     static volatile bool stopped;
+    // set do_cpupin to true to get more stable latency
+    bool do_cpupin = false;
 };
 
 volatile bool EchoServer::stopped = false;

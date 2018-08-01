@@ -51,8 +51,7 @@ public:
         long before = rdtsc();
         if(use_shm) {
             thread shm_thr([this]() {
-                // uncommment below cpupins to get more stable latency
-                // cpupin(6);
+                if(do_cpupin) cpupin(6);
                 while(!conn.IsClosed()) {
                     if(PollNum()) {
                         conn.Close();
@@ -62,15 +61,15 @@ public:
                 }
             });
 
+            if(do_cpupin) cpupin(7);
             // we still need to poll tcp for heartbeats even if using shm
-            // cpupin(7);
             while(!conn.IsClosed()) {
                 PollTcp(rdtsc());
             }
             shm_thr.join();
         }
         else {
-            // cpupin(7);
+            if(do_cpupin) cpupin(7);
             while(!conn.IsClosed()) {
                 if(PollNum()) {
                     conn.Close();
@@ -206,6 +205,8 @@ private:
     Connection& conn;
     // set slow to false to send msgs as fast as it can
     bool slow = true;
+    // set do_cpupin to true to get more stable latency
+    bool do_cpupin = false;
     int* send_num;
     int* recv_num;
 };

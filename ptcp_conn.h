@@ -132,21 +132,13 @@ public:
             last_my_ack_ = q_->MyAck();
             return header;
         }
-        if(readidx_ > 0) {
+        if(readidx_ + readidx_ > writeidx_) {
             int remain_size = writeidx_ - readidx_;
-            if(remain_size > 0) {
-                if(readidx_ >= remain_size) {
-                    memcpy(recvbuf_, recvbuf_ + readidx_, remain_size);
-                }
-                else {
-                    memmove(recvbuf_, recvbuf_ + readidx_, remain_size);
-                }
-            }
+            if(remain_size) memcpy(recvbuf_, recvbuf_ + readidx_, remain_size);
             writeidx_ = remain_size;
             nextmsg_idx_ -= readidx_;
             readidx_ = 0;
         }
-
         if(int len = DoRecv(Conf::TcpRecvBufSize - writeidx_)) {
             int old_writeidx = writeidx_;
             writeidx_ += len;
