@@ -1,4 +1,4 @@
-**TCPSHM is a connection-oriented persistent message queue framework based on TCP or SHM IPC on Linux**
+**TCPSHM is a connection-oriented persistent message queue framework based on TCP or SHM IPC for Linux**
 
 When using TCP to transfer data, sent out messages are not guaranteed to be received or handled by the receiver, and even worse, we often get unexpected disconnections due to network issues or program crash, so efforts are being made on recovery procedure to ensure both sides are synced. TCPSHM provides a reliable and efficient solution based on a sequence number and acknowledge mechanism, that every sent out msg is persisted in a send queue until sender got ack that it's been consumed by the receiver, so that disconnects/crashes are tolerated and the recovery process is purely automatic.
 
