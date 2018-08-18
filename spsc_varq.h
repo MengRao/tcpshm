@@ -26,6 +26,7 @@ public:
         }
         if(rewind) {
             blk[write_idx % BLK_CNT].header.size = 0;
+            asm volatile("" : : "m"(blk), "m"(write_idx) :); // memory fence
             write_idx += padding_sz;
         }
         MsgHeader& header = blk[write_idx % BLK_CNT].header;
@@ -34,13 +35,14 @@ public:
     }
 
     void Push() {
+        asm volatile("" : : "m"(blk), "m"(write_idx) :); // memory fence
         uint32_t blk_sz = (blk[write_idx % BLK_CNT].header.size + sizeof(Block) - 1) / sizeof(Block);
         write_idx += blk_sz;
         asm volatile("" : : "m"(write_idx) : ); // force write memory
     }
 
     MsgHeader* Front() {
-        asm volatile("" : "=m"(write_idx) : : ); // force read memory
+        asm volatile("" : "=m"(write_idx), "=m"(blk) : :); // force read memory
         if(read_idx == write_idx) {
             return nullptr;
         }
@@ -55,6 +57,7 @@ public:
     }
 
     void Pop() {
+        asm volatile("" : "=m"(blk) : "m"(read_idx) :); // memory fence
         uint32_t blk_sz = (blk[read_idx % BLK_CNT].header.size + sizeof(Block) - 1) / sizeof(Block);
         read_idx += blk_sz;
         asm volatile("" : : "m"(read_idx) : ); // force write memory
