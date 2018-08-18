@@ -18,7 +18,7 @@ This is a framework in that it provides a server side and client side C++ templa
   * No C++ virtual functions
   * No dynamic memory allocation(except a few std::string)
   * No writing to stdout or stderror
-  * No use of mutexes
+  * No use of mutex or atomic operations
   * Yes, it's lightweight, clean and efficient
   
 ## Limitations
