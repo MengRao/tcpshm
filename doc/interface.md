@@ -19,7 +19,7 @@ struct MsgHeader
 The framework will apply endian conversion on MsgHeader automatically(check ToLittleEndian below) if sending over tcp channel.
 
 TcpShmConnection is a general connection class that we can use to send or recv msgs.
-**Note that user should use the same thread to recv or send msgs on one connection.**
+**Note sending msgs on one connection is not thread safe(see [Limitations](https://github.com/MengRao/tcpshm#limitations)).**
 For sending, user calls Alloc() to allocate space to save a msg:
 
 ```c++
