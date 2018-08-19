@@ -228,6 +228,8 @@ public:
         return close_reason_;
     }
 
+    // TODO: set a flag to let polling thread close it,
+    // because Close is not thread safe
     void RequestClose() {
         Close("Request close", 0);
     }
@@ -237,10 +239,14 @@ public:
     }
 
 private:
+    // Close is not thread safe
+    // two threads could close the same fd twice
+    // which could accidentally close an newly opened fd
     void Close(const char* reason, int sys_errno) {
-        if(sockfd_ < 0) return;
-        ::close(sockfd_);
+        int fd = sockfd_;
+        if(fd < 0) return;
         sockfd_ = -1;
+        ::close(fd);
         close_reason_ = reason;
         close_errno_ = sys_errno;
     }
