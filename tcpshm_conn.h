@@ -152,6 +152,10 @@ private:
         ptcp_conn_.Open(sock_fd, remote_ack_seq, now);
     }
 
+    bool TryCloseFd() {
+        return ptcp_conn_.TryCloseFd();
+    }
+
     MsgHeader* TcpFront(int64_t now) {
         ptcp_conn_.SendHB(now);
         return ptcp_conn_.Front(); // for shm, we need to recv HB and Front() always return nullptr

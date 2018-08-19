@@ -130,7 +130,7 @@ protected:
             for(int i = 0; i < grp.live_cnt;) {
                 Connection& conn = *grp.conns[i];
                 conn.TcpFront(now); // poll heartbeats, ignore return
-                if(conn.IsClosed()) {
+                if(conn.TryCloseFd()) {
                     int sys_errno;
                     const char* reason = conn.GetCloseReason(&sys_errno);
                     static_cast<Derived*>(this)->OnClientDisconnected(conn, reason, sys_errno);
@@ -145,7 +145,7 @@ protected:
         for(auto& grp : tcp_grps_) {
             for(int i = 0; i < grp.live_cnt;) {
                 Connection& conn = *grp.conns[i];
-                if(conn.IsClosed()) {
+                if(conn.TryCloseFd()) {
                     int sys_errno;
                     const char* reason = conn.GetCloseReason(&sys_errno);
                     static_cast<Derived*>(this)->OnClientDisconnected(conn, reason, sys_errno);

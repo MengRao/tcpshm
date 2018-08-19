@@ -86,15 +86,16 @@ public:
 
     void Release() {
         Close("Release", 0);
+        TryCloseFd();
         if(q_) {
             my_munmap<PTCPQ>(q_);
             q_ = nullptr;
         }
     }
 
+    // precondition: sockfd_ == fd_to_close_ == -1
     void Open(int sock_fd, uint32_t remote_ack_seq, int64_t now) {
-        Close("Reconnect", 0);
-        sockfd_ = sock_fd;
+        sockfd_ = fd_to_close_ = sock_fd;
         writeidx_ = readidx_ = nextmsg_idx_ = 0;
         recv_time_ = send_time_ = now_ = now;
         if(q_) {
@@ -223,13 +224,21 @@ public:
         return sockfd_ < 0;
     }
 
+    // not thread safe
+    bool TryCloseFd() {
+        if(sockfd_ < 0 && fd_to_close_ >= 0) {
+            ::close(fd_to_close_);
+            fd_to_close_ = -1;
+            return true;
+        }
+        return false;
+    }
+
     const char* GetCloseReason(int* sys_errno) {
         *sys_errno = close_errno_;
         return close_reason_;
     }
 
-    // TODO: set a flag to let polling thread close it,
-    // because Close is not thread safe
     void RequestClose() {
         Close("Request close", 0);
     }
@@ -239,14 +248,11 @@ public:
     }
 
 private:
-    // Close is not thread safe
-    // two threads could close the same fd twice
-    // which could accidentally close an newly opened fd
+    // thread safe
+    // need to call TryCloseFd to really close it
     void Close(const char* reason, int sys_errno) {
-        int fd = sockfd_;
-        if(fd < 0) return;
+        if(sockfd_ < 0) return;
         sockfd_ = -1;
-        ::close(fd);
         close_reason_ = reason;
         close_errno_ = sys_errno;
     }
@@ -278,6 +284,7 @@ private:
     typedef PTCPQueue<Conf::TcpQueueSize, Conf::ToLittleEndian> PTCPQ;
     PTCPQ* q_ = nullptr; // may be mmaped to file
     int sockfd_ = -1;
+    int fd_to_close_ = -1;
     const char* close_reason_ = "nil";
     int close_errno_ = 0;
     static_assert((Conf::TcpRecvBufSize % 8) == 0, "Conf::TcpRecvBufSize must be multiple of 8");

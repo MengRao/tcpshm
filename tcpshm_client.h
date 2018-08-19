@@ -40,6 +40,7 @@ protected:
             static_cast<Derived*>(this)->OnSystemError("already connected", 0);
             return false;
         }
+        conn_.TryCloseFd();
         const char* error_msg;
         if(!server_name_) {
             std::string last_server_name_file = std::string(ptcp_dir_) + "/" + client_name_ + ".lastserver";
@@ -163,15 +164,15 @@ protected:
 
     // we need to PollTcp even if using shm
     void PollTcp(int64_t now) {
-        if(conn_.IsClosed()) return;
-        MsgHeader* head = conn_.TcpFront(now);
-        if(conn_.IsClosed()) {
+        if(!conn_.IsClosed()) {
+            MsgHeader* head = conn_.TcpFront(now);
+            if(head) static_cast<Derived*>(this)->OnServerMsg(head);
+        }
+        if(conn_.TryCloseFd()) {
             int sys_errno;
             const char* reason = conn_.GetCloseReason(&sys_errno);
             static_cast<Derived*>(this)->OnDisconnected(reason, sys_errno);
-            return;
         }
-        if(head) static_cast<Derived*>(this)->OnServerMsg(head);
     }
 
     // only for using shm
