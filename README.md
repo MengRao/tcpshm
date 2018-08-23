@@ -4,7 +4,7 @@ When using TCP to transfer data, sent out messages are not guaranteed to be rece
 
 And as the name implies, shared memory is also supported when communicating on the same host, and it provides the same API and behavior as TCP(so whether TCP or SHM underlies the connection is transparent to the user), but it's more than 30 times faster than TCP on localhost(it takes around 100ns to transfer a small msg through SHM). The shared memory communication is based on [A real-time single producer single consumer msg queue](https://github.com/MengRao/SPSC_Queue).
 
-The user message in tcpshm is general purpose binary string, it's user's responsibility to encode/decode it.
+The user message in tcpshm is just a general purpose binary string, it's user's responsibility to encode/decode it.
 
 Additionally, both sides of a connection have a specified name, and a pair of such names uniquely identifies a persistent connection. If one side disconnect and changes its name and reconnect with the same remote side, the connection will be brand new and will not recover from the old one. This can sometimes be useful, e.g: A daily trading server starts before market open and stops after market close every trading day, and every day when it starts it expects the connection with its clients to be new and any unhandled msgs from yesterday are silently discarded(obsolete order requests don't make any sense in a new trading day!), so the server can set its name to be something like "Server20180714".
 
