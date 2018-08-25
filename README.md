@@ -18,7 +18,6 @@ This is a framework in that it provides a server side and client side C++ templa
   * No getting any kind of timestamp from system
   * No C++ execptions
   * No C++ virtual functions
-  * No dynamic memory allocation(except a few std::string)
   * No writing to stdout/stderror or log file
   * No use of mutex or atomic operations
   * Yes, it's lightweight, clean and efficient
