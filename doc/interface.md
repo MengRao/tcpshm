@@ -224,6 +224,7 @@ struct Conf
     // user defined data in LoginRspMsg, take care of the endian
     using LoginRspUserData = char;
     // user defined data in TcpShmConnection class
+    // e.g. you can add a mutex to protect Alloc/Push if needing to writing msg from multiple threads
     using ConnectionUserData = char;
 };
 
