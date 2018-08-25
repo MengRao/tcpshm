@@ -170,7 +170,7 @@ private:
     char remote_name_[Conf::NameSize];
     const char* ptcp_dir_ = nullptr;
     PTCPConnection<Conf> ptcp_conn_;
-    typedef SPSCVarQueue<Conf::ShmQueueSize> SHMQ;
+    using SHMQ = SPSCVarQueue<Conf::ShmQueueSize>;
     alignas(64) SHMQ* shm_sendq_ = nullptr;
     SHMQ* shm_recvq_ = nullptr;
 };

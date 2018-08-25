@@ -1,7 +1,8 @@
 #pragma once
 #include "ptcp_queue.h"
 #include "mmap.h"
-#include "string.h"
+#include <memory>
+#include <sys/uio.h>
 
 namespace tcpshm {
 
@@ -102,6 +103,10 @@ public:
             q_->LoginAck(remote_ack_seq);
             SendPending();
         }
+        if(recvbuf_size_ == 0) {
+            recvbuf_size_ = Conf::TcpRecvBufInitSize;
+            recvbuf_.reset(new char[recvbuf_size_]);
+        }
     }
 
     MsgHeader* Alloc(uint16_t size) {
@@ -120,38 +125,33 @@ public:
     // safe if IsClosed
     MsgHeader* Front() {
         if(UseShm()) { // for shm, we only expect HB in tcp channel so just read something and ignore
-            DoRecv(sizeof(MsgHeader));
+            DoRecv();
             return nullptr;
         }
         while(nextmsg_idx_ != readidx_) {
-            MsgHeader* header = (MsgHeader*)(recvbuf_ + readidx_);
+            MsgHeader* header = (MsgHeader*)&recvbuf_[readidx_];
             if(header->msg_type == HeartbeatMsg::msg_type) {
                 readidx_ += sizeof(MsgHeader);
                 continue;
             }
+            // if user didn't pop last msg, we need to keep reading for updating ack_seq
             if(last_my_ack_ == q_->MyAck()) break;
             last_my_ack_ = q_->MyAck();
             return header;
         }
-        if(readidx_ + readidx_ > writeidx_) {
-            int remain_size = writeidx_ - readidx_;
-            if(remain_size) memcpy(recvbuf_, recvbuf_ + readidx_, remain_size);
-            writeidx_ = remain_size;
-            nextmsg_idx_ -= readidx_;
-            readidx_ = 0;
-        }
-        if(int len = DoRecv(Conf::TcpRecvBufSize - writeidx_)) {
+
+        if(int len = DoRecv()) {
             int old_writeidx = writeidx_;
             writeidx_ += len;
             while(writeidx_ - nextmsg_idx_ >= 8) {
-                MsgHeader* header = (MsgHeader*)(recvbuf_ + nextmsg_idx_);
-                if(old_writeidx - nextmsg_idx_ < 8) { // we haven't converted this header
+                MsgHeader* header = (MsgHeader*)&recvbuf_[nextmsg_idx_];
+                if(old_writeidx - (int)nextmsg_idx_ < 8) { // we haven't converted this header
                     header->ConvertByteOrder<Conf::ToLittleEndian>();
                 }
                 q_->Ack(header->ack_seq);
                 int msg_size = (header->size + 7) & -8;
-                if(msg_size > Conf::TcpRecvBufSize) {
-                    Close("Msg size larger than recv buf", 0);
+                if(msg_size > Conf::TcpRecvBufMaxSize) {
+                    Close("Msg size larger than recv buf max size", 0);
                     return nullptr;
                 }
                 if(writeidx_ - nextmsg_idx_ < msg_size) break;
@@ -163,14 +163,14 @@ public:
             }
         }
         if(readidx_ != nextmsg_idx_) {
-            return (MsgHeader*)(recvbuf_ + readidx_);
+            return (MsgHeader*)&recvbuf_[readidx_];
         }
         return nullptr;
     }
 
     // we have consumed the msg we got from Front()
     void Pop() {
-        MsgHeader* header = (MsgHeader*)(recvbuf_ + readidx_);
+        MsgHeader* header = (MsgHeader*)&recvbuf_[readidx_];
         readidx_ += (header->size + 7) & -8;
         q_->MyAck()++;
     }
@@ -257,41 +257,85 @@ private:
         close_errno_ = sys_errno;
     }
 
-    int DoRecv(int len) {
-        if(len == 0) return 0;
-        int ret = ::recv(sockfd_, recvbuf_ + writeidx_, len, 0);
+    int DoRecv() {
+        char stackbuf[65536];
+        if(readidx_ > 0 && readidx_ == writeidx_) {
+            readidx_ = nextmsg_idx_ = writeidx_ = 0;
+        }
+        uint32_t writable = recvbuf_size_ - writeidx_;
+        // we should avoid buffer expansion
+        // if total writable size is less than a half of recvbuf_size_, allow buffer expansion
+        bool allow_expand = (writable + readidx_) * 2 < recvbuf_size_;
+        uint32_t extra_size = std::min((uint32_t)sizeof(stackbuf),
+                                       readidx_ + (allow_expand ? Conf::TcpRecvBufMaxSize - recvbuf_size_ : 0));
+        if(writable + extra_size == 0) return 0;
+        int ret;
+        if(extra_size == 0){
+            ret = ::read(sockfd_, &recvbuf_[writeidx_], writable);
+        }
+        else {
+            struct iovec vec[2];
+            vec[0].iov_base = &recvbuf_[writeidx_];
+            vec[0].iov_len = writable;
+            vec[1].iov_base = stackbuf;
+            vec[1].iov_len = extra_size;
+            ret = ::readv(sockfd_, vec, 2);
+        }
         if(ret <= 0) {
             if(ret < 0) {
                 if(errno == EAGAIN) {
                     if(now_ - recv_time_ > Conf::ConnectionTimeout) {
                         Close("Timeout", 0);
                     }
-                    return 0;
+                }
+                else {
+                    Close("Read error", errno);
                 }
             }
-            // ret == 0 or ret < 0 for other errno
-            if(ret == 0)
+            else { // ret == 0;
                 Close("Remote close", 0);
-            else
-                Close("Recv error", errno);
+            }
             return 0;
         }
         recv_time_ = now_;
+        if(ret <= writable) return ret;
+        if(ret <= writable + readidx_) { // need to memmove
+            memmove(&recvbuf_[0], &recvbuf_[readidx_], recvbuf_size_ - readidx_);
+            memcpy(&recvbuf_[recvbuf_size_ - readidx_], stackbuf, ret - writable);
+        }
+        else { // need to expand buffer
+            // newbufsize must be large enough to hold all data just read
+            // and should be at least twice recvbuf_size_, but not larger than TcpRecvBufMaxSize
+            uint32_t newbufsize =
+                std::min(Conf::TcpRecvBufMaxSize, std::max(recvbuf_size_ * 2, (writeidx_ - readidx_ + ret + 7) & -8));
+            std::unique_ptr<char[]> new_buf(new char[newbufsize]);
+            memcpy(&new_buf[0], &recvbuf_[readidx_], recvbuf_size_ - readidx_);
+            memcpy(&new_buf[recvbuf_size_ - readidx_], stackbuf, ret - writable);
+            recvbuf_size_ = newbufsize;
+            std::swap(recvbuf_, new_buf);
+        }
+        writeidx_ -= readidx_; // let caller update writeidx_
+        nextmsg_idx_ -= readidx_;
+        readidx_ = 0;
+
         return ret;
     }
 
 private:
-    typedef PTCPQueue<Conf::TcpQueueSize, Conf::ToLittleEndian> PTCPQ;
+    using PTCPQ = PTCPQueue<Conf::TcpQueueSize, Conf::ToLittleEndian>;
     PTCPQ* q_ = nullptr; // may be mmaped to file
     int sockfd_ = -1;
     int fd_to_close_ = -1;
     const char* close_reason_ = "nil";
     int close_errno_ = 0;
-    static_assert((Conf::TcpRecvBufSize % 8) == 0, "Conf::TcpRecvBufSize must be multiple of 8");
-    alignas(8) char recvbuf_[Conf::TcpRecvBufSize];
-    int writeidx_ = 0;
-    int nextmsg_idx_ = 0;
-    int readidx_ = 0;
+    static_assert(Conf::TcpRecvBufMaxSize >= Conf::TcpRecvBufInitSize, "Conf::TcpRecvBufMaxSize too small");
+    static_assert((Conf::TcpRecvBufInitSize % 8) == 0, "Conf::TcpRecvBufInitSize must be a multiple of 8");
+    static_assert((Conf::TcpRecvBufMaxSize % 8) == 0, "Conf::TcpRecvBufMaxSize must be a multiple of 8");
+    std::unique_ptr<char[]> recvbuf_;
+    uint32_t recvbuf_size_ = 0;
+    uint32_t writeidx_ = 0;
+    uint32_t nextmsg_idx_ = 0;
+    uint32_t readidx_ = 0;
     int64_t recv_time_ = 0;
     int64_t send_time_ = 0;
     int64_t now_ = 0;

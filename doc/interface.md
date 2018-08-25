@@ -66,9 +66,45 @@ User can close the connection and the remote side will get the disconnect notifi
 ```
 
 In application, user is not allowed to create TcpShmConnection but can get a reference to it from client or server framework, and this reference is guaranteed to be valid until server/client is stopped, this allows user to send msgs even when it's disconnected, and remote side will get them once connection is re-established. 
-Also user can attach user-defined data to TcpShmConnection: 
+
+Connection related configuration are as below:
 ```c++
-    typename Conf::ConnectionUserData user_data;
+struct Conf
+{
+    // the size of client/server name in chars, including the ending null
+    static const uint32_t NameSize = 16;
+    
+    // shm queue size, must be a power of 2
+    static const uint32_t ShmQueueSize = 2048;
+
+    // set to the endian of majority of the hosts, e.g. true for x86
+    static const bool ToLittleEndian = true; 
+
+    // tcp send queue size, must be a multiple of 8
+    static const uint32_t TcpQueueSize = 2000; 
+
+    // tcp recv buff init size(recv buffer is allocated when tcp connection is established), must be a multiple of 8
+    static const uint32_t TcpRecvBufInitSize = 2000;
+
+    // tcp recv buff max size(recv buffer can expand when needed), must be a multiple of 8
+    static const uint32_t TcpRecvBufMaxSize = 8000;
+
+    // tcp connection timeout, measured in user provided timestamp
+    static const int64_t ConnectionTimeout = 10;
+
+    // delay of heartbeat msg after the last tcp msg send time, measured in user provided timestamp
+    static const int64_t HeartBeatInverval = 3;
+
+    // user defined data in LoginMsg, e.g. username, password..., take care of the endian
+    using LoginUserData = char;
+
+    // user defined data in LoginRspMsg, take care of the endian
+    using LoginRspUserData = char;
+
+    // user defined data in TcpShmConnection class
+    // e.g. you can add a mutex to protect Alloc/Push if needing to writing msg to one connection from multiple threads
+    using ConnectionUserData = char;
+};
 ```
 
 
@@ -80,28 +116,8 @@ tcpshm_client.h defines template Class `TcpShmClient`, user need to defines a ne
 
 struct Conf
 {
-    // the size of client/server name in chars, including the ending null
-    static const int NameSize = 16; 
-    // shm queue size, must be power of 2
-    static const int ShmQueueSize = 2048; 
-    // set to the endian of majority of the hosts, e.g. true for x86
-    static const bool ToLittleEndian = true; 
-    // tcp send queue size, must be multiple of 8
-    static const int TcpQueueSize = 10240;   
-    // tcp recv buff size, must be multiple of 8
-    static const int TcpRecvBufSize = 10240; 
-
-    // tcp connection timeout, measured in user provided timestamp
-    static const int64_t ConnectionTimeout = 10;
-    // delay of heartbeat msg after the last tcp msg send time, measured in user provided timestamp
-    static const int64_t HeartBeatInverval = 3;
-
-    // user defined data in LoginMsg
-    using LoginUserData = char;
-    // user defined data in LoginRspMsg
-    using LoginRspUserData = char;
-    // user defined data in TcpShmConnection class
-    using ConnectionUserData = char;
+    // Connection related Conf
+    ...
 };
 
 class MyClient;
@@ -191,41 +207,28 @@ tcpshm_server.h defines template Class `TcpShmServer`, same as `TcpShmClient`, u
 
 struct Conf
 {
-    // the size of client/server name in chars, including the ending null
-    static const int NameSize = 16;
-    // shm queue size, must be power of 2
-    static const int ShmQueueSize = 2048; // must be power of 2
-    // set to the endian of majority of the hosts, e.g. true for x86
-    static const bool ToLittleEndian = true; 
+    // Connection related Conf:
+    ...
+
+    // Server related Conf:
+
     // max number of unlogined tcp connection
-    static const int MaxNewConnections = 5;
+    static const uint32_t MaxNewConnections = 5;
+
     // max number of shm connection per group
-    static const int MaxShmConnsPerGrp = 4;
+    static const uint32_t MaxShmConnsPerGrp = 4;
+
     // number of shm connection groups
-    static const int MaxShmGrps = 1;
+    static const uint32_t MaxShmGrps = 1;
+
     // max number of tcp connections per group
-    static const int MaxTcpConnsPerGrp = 4;
+    static const uint32_t MaxTcpConnsPerGrp = 4;
+    
     // number of tcp connection groups
-    static const int MaxTcpGrps = 1;
-    // tcp send queue size, must be multiple of 8
-    static const int TcpQueueSize = 10240;   // must be multiple of 8
-    // tcp recv buff size, must be multiple of 8
-    static const int TcpRecvBufSize = 10240; // must be multiple of 8
+    static const uint32_t MaxTcpGrps = 1;
 
     // unlogined tcp connection timeout, measured in user provided timestamp
     static const int64_t NewConnectionTimeout = 3;
-    // tcp connection timeout, measured in user provided timestamp
-    static const int64_t ConnectionTimeout = 10;
-    // delay of heartbeat msg after the last tcp msg send time, measured in user provided timestamp
-    static const int64_t HeartBeatInverval = 3;
-
-    // user defined data in LoginMsg, take care of the endian
-    using LoginUserData = char;
-    // user defined data in LoginRspMsg, take care of the endian
-    using LoginRspUserData = char;
-    // user defined data in TcpShmConnection class
-    // e.g. you can add a mutex to protect Alloc/Push if needing to writing msg from multiple threads
-    using ConnectionUserData = char;
 };
 
 class MyServer;

@@ -3,8 +3,8 @@
 // configurations that must be the same between server and client
 struct CommonConf
 {
-    static const int NameSize = 16;
-    static const int ShmQueueSize = 2048; // must be power of 2
+    static const uint32_t NameSize = 16;
+    static const uint32_t ShmQueueSize = 2048; // must be power of 2
     static const bool ToLittleEndian = true; // set to the endian of majority of the hosts
 
     using LoginUserData = char;

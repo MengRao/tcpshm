@@ -13,13 +13,15 @@ struct ServerConf : public CommonConf
     // as the program is using rdtsc to measure time difference, Second is CPU frequency
     static const int64_t Second = 2000000000LL;
 
-    static const int MaxNewConnections = 5;
-    static const int MaxShmConnsPerGrp = 4;
-    static const int MaxShmGrps = 1;
-    static const int MaxTcpConnsPerGrp = 4;
-    static const int MaxTcpGrps = 1;
-    static const int TcpQueueSize = 10240;   // must be multiple of 8
-    static const int TcpRecvBufSize = 10240; // must be multiple of 8
+    static const uint32_t MaxNewConnections = 5;
+    static const uint32_t MaxShmConnsPerGrp = 4;
+    static const uint32_t MaxShmGrps = 1;
+    static const uint32_t MaxTcpConnsPerGrp = 4;
+    static const uint32_t MaxTcpGrps = 1;
+
+    static const uint32_t TcpQueueSize = 2000;       // must be a multiple of 8
+    static const uint32_t TcpRecvBufInitSize = 2000; // must be a multiple of 8
+    static const uint32_t TcpRecvBufMaxSize = 8000;  // must be a multiple of 8
 
     static const int64_t NewConnectionTimeout = 3 * Second;
     static const int64_t ConnectionTimeout = 10 * Second;

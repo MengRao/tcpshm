@@ -12,8 +12,9 @@ struct ClientConf : public CommonConf
     // as the program is using rdtsc to measure time difference, Second is CPU frequency
     static const int64_t Second = 2000000000LL;
 
-    static const int TcpQueueSize = 10240;   // must be multiple of 8
-    static const int TcpRecvBufSize = 10240; // must be multiple of 8
+    static const uint32_t TcpQueueSize = 2000;       // must be a multiple of 8
+    static const uint32_t TcpRecvBufInitSize = 2000; // must be a multiple of 8
+    static const uint32_t TcpRecvBufMaxSize = 8000;  // must be a multiple of 8
 
     static const int64_t ConnectionTimeout = 10 * Second;
     static const int64_t HeartBeatInverval = 3 * Second;
