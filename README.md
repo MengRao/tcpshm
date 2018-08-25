@@ -27,6 +27,7 @@ This is a framework in that it provides a server side and client side C++ templa
   * As it's non-blocking and busy waiting for the purpose of low latency, CPU usage would be high and a large number of live connections would downgrade the performance(say, more than 1000).
   * The pair of Alloc()/Push() implies writing to a connection is not thread safe, user should synchronize the operations when needing to write to one connection from multiple threads.
   * Transaction is not supported. So if you have multiple Push or Pop actions in a batch, be prepared that some succeed and some fail in case of program crash.
+  * Currently the message length must fit in a uint16_t(including the 8 bytes header). It's possible to make it configurable in the future(e.g. take 2 bytes from ack_seq because sequence number wrap around is already properly handled).
   
 ## Documentation
   [Interface Doc](https://github.com/MengRao/tcpshm/blob/master/doc/interface.md)
