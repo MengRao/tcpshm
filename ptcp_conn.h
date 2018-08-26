@@ -308,6 +308,7 @@ private:
             // and should be at least twice recvbuf_size_, but not larger than TcpRecvBufMaxSize
             uint32_t newbufsize =
                 std::min(Conf::TcpRecvBufMaxSize, std::max(recvbuf_size_ * 2, (writeidx_ - readidx_ + ret + 7) & -8));
+            // std::cout << "expand: " << recvbuf_size_ << " -> " << newbufsize << std::endl;
             std::unique_ptr<char[]> new_buf(new char[newbufsize]);
             memcpy(&new_buf[0], &recvbuf_[readidx_], recvbuf_size_ - readidx_);
             memcpy(&new_buf[recvbuf_size_ - readidx_], stackbuf, ret - writable);

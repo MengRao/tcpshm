@@ -1,6 +1,6 @@
 #include "../tcpshm_client.h"
 #include <bits/stdc++.h>
-#include "rdtsc.h"
+#include "timestamp.h"
 #include "common.h"
 #include "cpupin.h"
 
@@ -10,11 +10,11 @@ using namespace tcpshm;
 struct ClientConf : public CommonConf
 {
     // as the program is using rdtsc to measure time difference, Second is CPU frequency
-    static const int64_t Second = 2000000000LL;
+    static const int64_t Second = 3000000000LL;
 
     static const uint32_t TcpQueueSize = 2000;       // must be a multiple of 8
-    static const uint32_t TcpRecvBufInitSize = 2000; // must be a multiple of 8
-    static const uint32_t TcpRecvBufMaxSize = 8000;  // must be a multiple of 8
+    static const uint32_t TcpRecvBufInitSize = 1000; // must be a multiple of 8
+    static const uint32_t TcpRecvBufMaxSize = 2000;  // must be a multiple of 8
 
     static const int64_t ConnectionTimeout = 10 * Second;
     static const int64_t HeartBeatInverval = 3 * Second;
@@ -49,7 +49,7 @@ public:
             return;
         }
         cout << "client started, send_num: " << *send_num << " recv_num: " << *recv_num << endl;
-        long before = rdtsc();
+        int64_t before = now();
         if(use_shm) {
             thread shm_thr([this]() {
                 if(do_cpupin) cpupin(6);
@@ -79,10 +79,10 @@ public:
                 PollTcp(rdtsc());
             }
         }
-        long latency = rdtsc() - before;
+        int64_t latency = now() - before;
         Stop();
         cout << "client stopped, send_num: " << *send_num << " recv_num: " << *recv_num << " latency: " << latency
-             << endl;
+             << " avg rtt: " << (msg_sent > 0 ? (double)latency / msg_sent : 0.0) << endl;
     }
 
 private:
@@ -92,17 +92,11 @@ private:
             if(slow && *send_num != *recv_num) return false;
             // we randomly send one of the 4 msgs
             int tp = rand() % 4 + 1;
-            if(tp == 1) {
-                TrySendMsg<Msg1>();
-            }
-            else if(tp == 2) {
-                TrySendMsg<Msg2>();
-            }
-            else if(tp == 3) {
-                TrySendMsg<Msg3>();
-            }
-            else if(tp == 4) {
-                TrySendMsg<Msg4>();
+            switch(tp) {
+                case 1: TrySendMsg<Msg1>(); break;
+                case 2: TrySendMsg<Msg2>(); break;
+                case 3: TrySendMsg<Msg3>(); break;
+                case 4: TrySendMsg<Msg4>(); break;
             }
         }
         else {
@@ -119,11 +113,11 @@ private:
         header->msg_type = T::msg_type;
         T* msg = (T*)(header + 1);
         for(auto& v : msg->val) {
-            // convert to configurated network byte order. Don't need to do this if you know server is using the same
-            // endian
+            // convert to configurated network byte order, don't need this if you know server is using the same endian
             v = Endian<ClientConf::ToLittleEndian>::Convert((*send_num)++);
         }
         conn.Push();
+        msg_sent++;
         return true;
     }
 
@@ -177,21 +171,13 @@ private:
 
     // called by APP thread
     void OnServerMsg(MsgHeader* header) {
-        auto msg_type = header->msg_type;
-        if(msg_type == 1) {
-            handleMsg((Msg1*)(header + 1));
-        }
-        else if(msg_type == 2) {
-            handleMsg((Msg2*)(header + 1));
-        }
-        else if(msg_type == 3) {
-            handleMsg((Msg3*)(header + 1));
-        }
-        else if(msg_type == 4) {
-            handleMsg((Msg4*)(header + 1));
-        }
-        else {
-            assert(false);
+        // auto msg_type = header->msg_type;
+        switch(header->msg_type) {
+            case 1: handleMsg((Msg1*)(header + 1)); break;
+            case 2: handleMsg((Msg2*)(header + 1)); break;
+            case 3: handleMsg((Msg3*)(header + 1)); break;
+            case 4: handleMsg((Msg4*)(header + 1)); break;
+            default: assert(false);
         }
         conn.Pop();
     }
@@ -204,6 +190,7 @@ private:
 private:
     static const int MaxNum = 10000000;
     Connection& conn;
+    int msg_sent = 0;
     // set slow to false to send msgs as fast as it can
     bool slow = true;
     // set do_cpupin to true to get more stable latency

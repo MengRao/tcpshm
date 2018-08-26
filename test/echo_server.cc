@@ -1,6 +1,6 @@
 #include "../tcpshm_server.h"
 #include <bits/stdc++.h>
-#include "rdtsc.h"
+#include "timestamp.h"
 #include "common.h"
 #include "cpupin.h"
 
@@ -11,7 +11,7 @@ using namespace tcpshm;
 struct ServerConf : public CommonConf
 {
     // as the program is using rdtsc to measure time difference, Second is CPU frequency
-    static const int64_t Second = 2000000000LL;
+    static const int64_t Second = 3000000000LL;
 
     static const uint32_t MaxNewConnections = 5;
     static const uint32_t MaxShmConnsPerGrp = 4;
@@ -19,9 +19,11 @@ struct ServerConf : public CommonConf
     static const uint32_t MaxTcpConnsPerGrp = 4;
     static const uint32_t MaxTcpGrps = 1;
 
-    static const uint32_t TcpQueueSize = 2000;       // must be a multiple of 8
-    static const uint32_t TcpRecvBufInitSize = 2000; // must be a multiple of 8
-    static const uint32_t TcpRecvBufMaxSize = 8000;  // must be a multiple of 8
+    // echo server's TcpQueueSize should be larger than that of client if client is in fast mode
+    // otherwise server's send queue could be blocked and ack_seq can only be sent through HB which is slow
+    static const uint32_t TcpQueueSize = 3000;       // must be a multiple of 8
+    static const uint32_t TcpRecvBufInitSize = 1000; // must be a multiple of 8
+    static const uint32_t TcpRecvBufMaxSize = 2000;  // must be a multiple of 8
 
     static const int64_t NewConnectionTimeout = 3 * Second;
     static const int64_t ConnectionTimeout = 10 * Second;
