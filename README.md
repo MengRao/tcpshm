@@ -25,7 +25,7 @@ This is a framework in that it provides a server side and client side C++ templa
 ## Limitations
   * It won't persist data on disk, so it can't recover from power down
   * As it's non-blocking and busy waiting for the purpose of low latency, CPU usage would be high and a large number of live connections would downgrade the performance(say, more than 1000).
-  * The pair of Alloc()/Push() implies writing to a connection is not thread safe, user should synchronize the operations when needing to write to one connection from multiple threads.
+  * Currently user can only write to a connection in its polling(reading) thread. If needing to write msg from other threads, user have to push it to some queue which is then consumed by the polling thread.
   * Transaction is not supported. So if you have multiple Push or Pop actions in a batch, be prepared that some succeed and some fail in case of program crash.
   * Currently the message length must fit in a uint16_t(including the 8 bytes header). It's possible to make it configurable in the future(e.g. take 2 bytes from ack_seq because sequence number wrap around is already properly handled).
   
