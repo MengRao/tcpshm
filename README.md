@@ -2,7 +2,7 @@
 
 When using TCP to transfer data, sent out messages are not guaranteed to be received or handled by the receiver, and even worse, we often get unexpected disconnections due to network issues or program crash, so efforts are being made on recovery procedure to ensure both sides are synced. TCPSHM provides a reliable and efficient solution based on a sequence number and acknowledge mechanism, that every sent out msg is persisted in a send queue until sender got ack that it's been consumed by the receiver, so that disconnects/crashes are tolerated and the recovery process is purely automatic.
 
-And as the name implies, shared memory is also supported when communicating on the same host, and it provides the same API and behavior as TCP(so whether TCP or SHM underlies the connection is transparent to the user), but it's more than 30 times faster than TCP on localhost(it takes around 100ns to transfer a small msg through SHM). The shared memory communication is based on [A real-time single producer single consumer msg queue](https://github.com/MengRao/SPSC_Queue).
+And as the name implies, shared memory is also supported when communicating on the same host, and it provides the same API and behavior as TCP(so whether TCP or SHM underlies the connection is transparent to the user), but it's more than 20 times faster than TCP on localhost(it takes around 100ns to transfer a small msg through SHM). The shared memory communication is based on [A real-time single producer single consumer msg queue](https://github.com/MengRao/SPSC_Queue).
 
 The user message format is just a general purpose binary string, it's user's responsibility to encode/decode it. E.g. user can simply use C/C++ struct for simplicity/efficiency, or google protocol buffer for extensibility.
 
@@ -34,6 +34,12 @@ This is a framework in that it provides a server side and client side C++ templa
   
 ## Example
   [Echo Client/Server](https://github.com/MengRao/tcpshm/tree/master/test) is a complete example.
+  
+## Performance
+The echo client/server example is also used as performance test, where the client sends a message to the server on the same host, waiting for the response from server before sending the next one... Each message has a variable size which is randomly chosen in (16, 36, 68, 200) bytes. The test is done on an Ubuntu 14.04 host with Intel(R) Xeon(R) CPU E5-2687W 0 @ 3.10GHz, and cpupin is enabled in both client and server to get more stable latency(prevent process from being preempted). We use average RTT(Round Trip Time) as a latency measurement index(avg rtt = total time elapsed / number of messages processed):
+
+**RTT in TCP Mode: 8.81837 us**
+**RTT in SHM Mode: 0.338221 us**
   
 ## Guide to header files:
 
