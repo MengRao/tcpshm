@@ -36,7 +36,7 @@ This is a framework in that it provides a server side and client side C++ templa
   [Echo Client/Server](https://github.com/MengRao/tcpshm/tree/master/test) is a complete example.
   
 ## Performance
-The echo client/server example is also used as performance test, where the client sends a message to the server on the same host, waiting for the response from server before sending the next one... Each message has a variable size which is randomly chosen in (16, 36, 68, 200) bytes. The test is done on an Ubuntu 14.04 host with Intel(R) Xeon(R) CPU E5-2687W 0 @ 3.10GHz, and cpupin is enabled in both client and server to get more stable latency(prevent process from being preempted). We use average RTT(Round Trip Time) as a latency measurement index(avg rtt = total time elapsed / number of messages processed):
+The echo client/server example is also used as performance test, where the client sends a message to the server on the same host, waiting for the response from server before sending the next one... Each message has a variable size which is randomly chosen in (16, 36, 68, 200) bytes. The test is done on an Ubuntu 14.04 host with Intel(R) Xeon(R) CPU E5-2687W 0 @ 3.10GHz, and cpupin is enabled in both client and server to get more stable latency(prevent process from being preempted). We use average RTT(Round Trip Time) to measure latency(avg rtt = total time elapsed / number of messages processed):
 
 RTT in **TCP** mode: **8.81837 us**
 
