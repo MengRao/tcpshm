@@ -27,7 +27,7 @@ This is a framework in that it provides a server side and client side C++ templa
   * As it's non-blocking and busy waiting for the purpose of low latency, CPU usage would be high and a large number of live connections would downgrade the performance(say, more than 1000).
   * Currently user can only write to a connection in its polling(reading) thread. If needing to write msg from other threads, user has to push it to some queue which is then consumed by the polling thread.
   * Transaction is not supported. So if you have multiple Push or Pop actions in a batch, be prepared that some succeed and some fail in case of program crash.
-  * Currently the message length must fit in a uint16_t(including the 8 bytes header). It's possible to make it configurable in the future(e.g. take 2 bytes from ack_seq because sequence number wrap around is already properly handled).
+  * Currently the message length must fit in a uint16_t(including the 8 bytes header). It's possible to make it configurable in the future(e.g. take 2 bytes from ack_seq because sequence number wraparound is already properly handled).
   
 ## Documentation
   [Interface Doc](https://github.com/MengRao/tcpshm/blob/master/doc/interface.md)
