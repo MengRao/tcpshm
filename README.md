@@ -48,4 +48,4 @@ RTT in **SHM** mode: **0.338221 us**
 
 * **tcpshm_server.h**: The server side template class.
 
-* **tcpshm_conn.h**: A general connection class that encapulates tcp or shm, use Alloc()/Push() and Front()/Pop() to send and recv msgs. You can get a connection object from client or server side interfaces.
+* **tcpshm_conn.h**: A general connection class that encapulates tcp or shm, use Alloc()/Push() and Front()/Pop() to send and recv msgs. You can get a connection reference from client or server side interfaces, and send msgs to it even if it's currently disconencted from remote peer.
