@@ -42,7 +42,7 @@ RTT in **TCP** mode: **8.81837 us**
 
 RTT in **SHM** mode: **0.338221 us**
 
-For comparison, below are performance of **ZeroMQ** using exactly the same benchmark method:
+For comparison, below are performance of **ZeroMQ(Zero-Copy REQ/REP)** using exactly the same benchmark method:
 
 RTT in **ZMQ TCP** mode: **42.268 us**
 
