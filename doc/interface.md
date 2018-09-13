@@ -89,6 +89,9 @@ struct Conf
     // tcp recv buff max size(recv buffer can expand when needed), must be a multiple of 8
     static const uint32_t TcpRecvBufMaxSize = 8000;
 
+    // if enable TCP_NODELAY
+    static const bool TcpNoDelay = true;
+
     // tcp connection timeout, measured in user provided timestamp
     static const int64_t ConnectionTimeout = 10;
 

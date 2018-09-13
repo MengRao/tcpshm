@@ -3,6 +3,7 @@
 #include <strings.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <arpa/inet.h>
 #include "tcpshm_conn.h"
 
@@ -50,15 +51,19 @@ protected:
             return false;
         }
 
-        if((listenfd_ = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
+        if((listenfd_ = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
             static_cast<Derived*>(this)->OnSystemError("socket", errno);
             return false;
         }
 
         fcntl(listenfd_, F_SETFL, O_NONBLOCK);
         int yes = 1;
-        if(setsockopt(listenfd_, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes)) == -1) {
+        if(setsockopt(listenfd_, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes)) < 0) {
             static_cast<Derived*>(this)->OnSystemError("setsockopt SO_REUSEADDR", errno);
+            return false;
+        }
+        if(Conf::TcpNoDelay && setsockopt(listenfd_, IPPROTO_TCP, TCP_NODELAY, &yes, sizeof(yes)) < 0) {
+            static_cast<Derived*>(this)->OnSystemError("setsockopt TCP_NODELAY", errno);
             return false;
         }
 
@@ -67,11 +72,11 @@ protected:
         inet_pton(AF_INET, listen_ipv4, &(local_addr.sin_addr));
         local_addr.sin_port = htons(listen_port);
         bzero(&(local_addr.sin_zero), 8);
-        if(bind(listenfd_, (struct sockaddr*)&local_addr, sizeof(local_addr)) == -1) {
+        if(bind(listenfd_, (struct sockaddr*)&local_addr, sizeof(local_addr)) < 0) {
             static_cast<Derived*>(this)->OnSystemError("bind", errno);
             return false;
         }
-        if(listen(listenfd_, 5) == -1) {
+        if(listen(listenfd_, 5) < 0) {
             static_cast<Derived*>(this)->OnSystemError("listen", errno);
             return false;
         }

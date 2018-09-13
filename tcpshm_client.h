@@ -4,6 +4,7 @@
 #include <strings.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <arpa/inet.h>
 #include "tcpshm_conn.h"
 
@@ -68,7 +69,7 @@ protected:
             return false;
         }
         int fd;
-        if((fd = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
+        if((fd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
             static_cast<Derived*>(this)->OnSystemError("socket", errno);
             return false;
         }
@@ -87,6 +88,12 @@ protected:
             close(fd);
             return false;
         }
+        int yes = 1;
+        if(Conf::TcpNoDelay && setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &yes, sizeof(yes)) < 0) {
+            static_cast<Derived*>(this)->OnSystemError("setsockopt TCP_NODELAY", errno);
+            close(fd);
+            return false;
+        }
 
         struct sockaddr_in server_addr;
         server_addr.sin_family = AF_INET;
@@ -94,7 +101,7 @@ protected:
         server_addr.sin_port = htons(server_port);
         bzero(&(server_addr.sin_zero), 8);
 
-        if(connect(fd, (struct sockaddr*)&server_addr, sizeof(server_addr)) == -1) {
+        if(connect(fd, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
             static_cast<Derived*>(this)->OnSystemError("connect", errno);
             close(fd);
             return false;

@@ -24,6 +24,7 @@ struct ServerConf : public CommonConf
     static const uint32_t TcpQueueSize = 3000;       // must be a multiple of 8
     static const uint32_t TcpRecvBufInitSize = 1000; // must be a multiple of 8
     static const uint32_t TcpRecvBufMaxSize = 2000;  // must be a multiple of 8
+    static const bool TcpNoDelay = true;
 
     static const int64_t NewConnectionTimeout = 3 * Second;
     static const int64_t ConnectionTimeout = 10 * Second;
