@@ -11,20 +11,19 @@ Additionally, both sides of a connection have a specified name, and a pair of su
 This is a framework in that it provides a server side and client side C++ template class, which implement a typical tcp server and client and are also highly configurable and customizable. For server, the framework supports connection sharding: user predefines a set of connection groups, having one or more threads polling these groups, and once there's a new connection user can decide which group to assign to, so the framework gives the user full control over the mapping between serving threads and client connections.
 
 ## Technical Features
-  * No C++ source files, only C++ headers, so no library to build and link
+  * No source files, only header files, so no library to build and link
   * No external library dependencies
-  * Non-blocking(except client side Connect())
+  * Non-blocking(except client Connect())
   * No creating threads internally
   * No getting any kind of timestamp from system
   * No C++ execptions
-  * No C++ virtual functions
   * No writing to stdout/stderror or log file
   * No use of mutex or atomic operations
   * Yes, it's lightweight, clean and efficient
   
 ## Limitations
   * It won't persist data on disk, so it can't recover from power down
-  * As it's non-blocking and busy waiting for the purpose of low latency, CPU usage would be high and a large number of live connections would downgrade the performance(say, more than 1000).
+  * As it's non-blocking and busy polling for the purpose of low latency, CPU usage would be high and a large number of live connections would downgrade the performance(say, more than 1000).
   * Currently user can only write to a connection in its polling(reading) thread. If needing to write msg from other threads, user has to push it to some queue which is then consumed by the polling thread.
   * Transaction is not supported. So if you have multiple Push or Pop actions in a batch, be prepared that some succeed and some fail in case of program crash.
   * Currently the message length must fit in a uint16_t(including the 8 bytes header). It's possible to make it configurable in the future(e.g. take 2 bytes from ack_seq because sequence number wraparound is already properly handled).
