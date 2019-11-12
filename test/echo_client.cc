@@ -9,18 +9,17 @@ using namespace tcpshm;
 
 struct ClientConf : public CommonConf
 {
-    // as the program is using rdtsc to measure time difference, Second is CPU frequency
-    static const int64_t Second = 3000000000LL;
+  static const int64_t NanoInSecond = 1000000000LL;
 
-    static const uint32_t TcpQueueSize = 2000;       // must be a multiple of 8
-    static const uint32_t TcpRecvBufInitSize = 1000; // must be a multiple of 8
-    static const uint32_t TcpRecvBufMaxSize = 2000;  // must be a multiple of 8
-    static const bool TcpNoDelay = true;
+  static const uint32_t TcpQueueSize = 2000;       // must be a multiple of 8
+  static const uint32_t TcpRecvBufInitSize = 1000; // must be a multiple of 8
+  static const uint32_t TcpRecvBufMaxSize = 2000;  // must be a multiple of 8
+  static const bool TcpNoDelay = true;
 
-    static const int64_t ConnectionTimeout = 10 * Second;
-    static const int64_t HeartBeatInverval = 3 * Second;
+  static const int64_t ConnectionTimeout = 10 * NanoInSecond;
+  static const int64_t HeartBeatInverval = 3 * NanoInSecond;
 
-    using ConnectionUserData = char;
+  using ConnectionUserData = char;
 };
 
 class EchoClient;
@@ -50,7 +49,7 @@ public:
             return;
         }
         cout << "client started, send_num: " << *send_num << " recv_num: " << *recv_num << endl;
-        int64_t before = now();
+        uint64_t before = now();
         if(use_shm) {
             thread shm_thr([this]() {
                 if(do_cpupin) cpupin(6);
@@ -66,7 +65,7 @@ public:
             if(do_cpupin) cpupin(7);
             // we still need to poll tcp for heartbeats even if using shm
             while(!conn.IsClosed()) {
-                PollTcp(rdtsc());
+              PollTcp(now());
             }
             shm_thr.join();
         }
@@ -77,13 +76,13 @@ public:
                     conn.Close();
                     break;
                 }
-                PollTcp(rdtsc());
+                PollTcp(now());
             }
         }
-        int64_t latency = now() - before;
+        uint64_t latency = now() - before;
         Stop();
         cout << "client stopped, send_num: " << *send_num << " recv_num: " << *recv_num << " latency: " << latency
-             << " avg rtt: " << (msg_sent > 0 ? (double)latency / msg_sent : 0.0) << endl;
+             << " avg rtt: " << (msg_sent > 0 ? (double)latency / msg_sent : 0.0) << " ns" << endl;
     }
 
 private:
@@ -153,7 +152,7 @@ private:
     // confirmation for login success
     int64_t OnLoginSuccess(const LoginRspMsg* login_rsp) {
         cout << "Login Success" << endl;
-        return rdtsc();
+        return now();
     }
 
     // called within Connect()
