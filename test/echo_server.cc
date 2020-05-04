@@ -54,22 +54,22 @@ public:
         vector<thread> threads;
         // create threads for polling tcp
         for(int i = 0; i < ServerConf::MaxTcpGrps; i++) {
-            threads.emplace_back([this, i]() {
-                if(do_cpupin) cpupin(i);
-                while(!stopped) {
-                  PollTcp(now(), i);
-                }
-            });
+          threads.emplace_back([this, i]() {
+            if (do_cpupin) cpupin(4 + i);
+            while (!stopped) {
+              PollTcp(now(), i);
+            }
+          });
         }
 
         // create threads for polling shm
         for(int i = 0; i < ServerConf::MaxShmGrps; i++) {
-            threads.emplace_back([this, i]() {
-                if(do_cpupin) cpupin(ServerConf::MaxTcpGrps + i);
-                while(!stopped) {
-                    PollShm(i);
-                }
-            });
+          threads.emplace_back([this, i]() {
+            if (do_cpupin) cpupin(4 + ServerConf::MaxTcpGrps + i);
+            while (!stopped) {
+              PollShm(i);
+            }
+          });
         }
 
         // polling control using this thread
