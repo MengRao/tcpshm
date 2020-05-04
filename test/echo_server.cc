@@ -72,8 +72,6 @@ public:
             });
         }
 
-        if(do_cpupin) cpupin(ServerConf::MaxTcpGrps + ServerConf::MaxShmGrps);
-
         // polling control using this thread
         while(!stopped) {
           PollCtl(now());
@@ -175,7 +173,7 @@ private:
 
     static volatile bool stopped;
     // set do_cpupin to true to get more stable latency
-    bool do_cpupin = false;
+    bool do_cpupin = true;
 };
 
 volatile bool EchoServer::stopped = false;

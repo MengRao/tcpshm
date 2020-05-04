@@ -49,12 +49,13 @@ public:
             return;
         }
         cout << "client started, send_num: " << *send_num << " recv_num: " << *recv_num << endl;
-        uint64_t before = now();
         if(use_shm) {
             thread shm_thr([this]() {
-                if(do_cpupin) cpupin(6);
+                if(do_cpupin) cpupin(7);
+                start_time = now();
                 while(!conn.IsClosed()) {
                     if(PollNum()) {
+                        stop_time = now();
                         conn.Close();
                         break;
                     }
@@ -62,7 +63,6 @@ public:
                 }
             });
 
-            if(do_cpupin) cpupin(7);
             // we still need to poll tcp for heartbeats even if using shm
             while(!conn.IsClosed()) {
               PollTcp(now());
@@ -71,15 +71,17 @@ public:
         }
         else {
             if(do_cpupin) cpupin(7);
+            start_time = now();
             while(!conn.IsClosed()) {
                 if(PollNum()) {
+                    stop_time = now();
                     conn.Close();
                     break;
                 }
                 PollTcp(now());
             }
         }
-        uint64_t latency = now() - before;
+        uint64_t latency = stop_time - start_time;
         Stop();
         cout << "client stopped, send_num: " << *send_num << " recv_num: " << *recv_num << " latency: " << latency
              << " avg rtt: " << (msg_sent > 0 ? (double)latency / msg_sent : 0.0) << " ns" << endl;
@@ -191,10 +193,12 @@ private:
     static const int MaxNum = 10000000;
     Connection& conn;
     int msg_sent = 0;
+    uint64_t start_time = 0;
+    uint64_t stop_time = 0;
     // set slow to false to send msgs as fast as it can
     bool slow = true;
     // set do_cpupin to true to get more stable latency
-    bool do_cpupin = false;
+    bool do_cpupin = true;
     int* send_num;
     int* recv_num;
 };
